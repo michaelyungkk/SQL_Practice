@@ -1,0 +1,695 @@
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  background:
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+}
+
+.sidebar {
+  border-right: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+}
+
+.brand-block {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.brand-block h1,
+.hero-panel h2,
+.section-heading h3,
+.detail-header h3 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.brand-block p,
+.hero-panel p,
+.section-heading span,
+.context,
+.challenge-card p,
+.schema-card p,
+.next-card p,
+.explanation-stack p,
+.detail-grid p,
+.schema-preview-card p {
+  margin: 0;
+  color: #64748b;
+}
+
+.brand-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #0ea5e9, #7c3aed);
+  color: #f8fafc;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.rank-panel,
+.panel,
+.hero-panel,
+.metric-card,
+.path-step,
+.schema-card,
+.schema-preview-card,
+.next-card,
+.challenge-card,
+.feedback-box,
+.hint-card {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+}
+
+.rank-panel,
+.panel,
+.hero-panel,
+.next-card {
+  border-radius: 18px;
+}
+
+.rank-panel {
+  padding: 16px;
+}
+
+.rank-header,
+.challenge-topline,
+.challenge-meta,
+.section-heading,
+.detail-header,
+.editor-toolbar,
+.toolbar-title,
+.toolbar-actions,
+.mini-stat,
+.hero-grid,
+.practice-toolbar {
+  display: flex;
+  align-items: center;
+}
+
+.rank-header,
+.challenge-topline,
+.section-heading,
+.detail-header,
+.editor-toolbar {
+  justify-content: space-between;
+}
+
+.rank-header strong,
+.metric-card strong,
+.countdown,
+.challenge-topline span,
+.detail-grid strong,
+.feedback-box strong,
+.schema-card strong,
+.schema-preview-card strong {
+  color: #0f172a;
+}
+
+.progress-bar {
+  margin: 10px 0 8px;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #dbe7f5;
+  overflow: hidden;
+}
+
+.progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22c55e, #0ea5e9);
+}
+
+.nav-list {
+  display: grid;
+  gap: 8px;
+}
+
+.nav-button,
+.primary-button,
+.secondary-button,
+.challenge-card,
+select {
+  border-radius: 12px;
+  font: inherit;
+}
+
+.nav-button,
+.secondary-button,
+.primary-button {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.nav-button {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+}
+
+.nav-button.active,
+.challenge-card.active,
+.primary-button {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(124, 58, 237, 0.1));
+  border-color: rgba(14, 165, 233, 0.4);
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.mini-stat {
+  gap: 10px;
+  color: #475569;
+}
+
+.main-shell {
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.main-shell > * {
+  width: min(1480px, 100%);
+}
+
+.dashboard,
+.schema-layout,
+.workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.hero-panel {
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.9fr);
+}
+
+.eyebrow {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14, 165, 233, 0.1);
+  color: #0369a1;
+  margin-bottom: 12px;
+  font-size: 0.84rem;
+}
+
+.hero-grid,
+.dashboard-grid,
+.path-grid,
+.schema-preview-grid,
+.schema-grid,
+.detail-grid,
+.result-grid {
+  gap: 16px;
+}
+
+.hero-grid,
+.dashboard-grid,
+.schema-preview-grid,
+.schema-grid,
+.detail-grid,
+.result-grid {
+  display: grid;
+}
+
+.hero-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric-card,
+.path-step,
+.schema-preview-card {
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.metric-card {
+  min-height: 128px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.metric-card strong {
+  font-size: 2rem;
+}
+
+.dashboard-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.panel {
+  padding: 18px;
+}
+
+.path-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.path-step {
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+}
+
+.path-step strong {
+  color: #0284c7;
+  font-size: 1.2rem;
+}
+
+.path-step.reached {
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+.next-card {
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.badge-pill {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.schema-preview-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.schema-layout {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.schema-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.schema-card {
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.schema-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.schema-card li {
+  display: grid;
+  gap: 2px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(203, 213, 225, 0.8);
+}
+
+.schema-card span,
+.schema-card small {
+  color: #64748b;
+}
+
+.preview-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.workspace {
+  display: grid;
+  gap: 18px;
+}
+
+.workspace.tasks-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.task-panel,
+.content-column,
+.mode-section,
+.challenge-list,
+.detail-panel,
+.editor-panel,
+.workspace-toolbar,
+.hint-stack,
+.explanation-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.task-panel {
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.challenge-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.challenge-card {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  min-height: 124px;
+  display: grid;
+  gap: 12px;
+}
+
+.challenge-meta {
+  justify-content: space-between;
+  color: #0369a1;
+  font-size: 0.86rem;
+}
+
+.practice-toolbar {
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.practice-toolbar label {
+  display: grid;
+  gap: 8px;
+  color: #334155;
+}
+
+select {
+  min-width: 180px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: #ffffff;
+  color: #0f172a;
+  padding: 10px 12px;
+}
+
+.practice-focus {
+  display: grid;
+}
+
+.detail-header {
+  gap: 12px;
+}
+
+.lesson-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #f8fbff;
+  color: #0f172a;
+}
+
+.detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.learn-overview,
+.learn-example {
+  display: grid;
+  gap: 14px;
+}
+
+.learn-overview {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.learn-secondary {
+  padding-top: 2px;
+}
+
+.learn-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #f8fbff;
+}
+
+.learn-card strong,
+.learn-example h3 {
+  color: #0f172a;
+}
+
+.learn-card p,
+.editor-intro {
+  margin: 0;
+  color: #64748b;
+}
+
+.inline-code {
+  padding: 0.1rem 0.38rem;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  font: 0.92em/1.5 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+}
+
+.sql-token {
+  font-family: inherit;
+}
+
+.sql-keyword {
+  color: #7c3aed;
+  font-weight: 700;
+}
+
+.sql-identifier {
+  color: #0f172a;
+}
+
+.sql-string {
+  color: #0f766e;
+}
+
+.sql-number {
+  color: #b45309;
+}
+
+.sql-symbol {
+  color: #475569;
+}
+
+.sql-plain {
+  color: #334155;
+}
+
+.example-code {
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 14px;
+  background: #f8fbff;
+  overflow: auto;
+}
+
+.example-code pre {
+  margin: 0;
+  padding: 16px;
+  font: 0.94rem/1.55 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.learn-detail-grid {
+  padding-top: 4px;
+}
+
+.countdown {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.editor-panel textarea {
+  width: 100%;
+  min-height: 280px;
+  resize: vertical;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #f8fbff;
+  color: #0f172a;
+  padding: 16px;
+  font: 0.96rem/1.55 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+}
+
+.editor-intro {
+  margin: 0 0 2px;
+}
+
+.toolbar-title,
+.toolbar-actions,
+.secondary-button,
+.primary-button,
+.hint-card {
+  gap: 8px;
+}
+
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+}
+
+.secondary-button {
+  background: #f8fafc;
+}
+
+.result-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.feedback-box,
+.hint-card,
+.empty-state {
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.feedback-box.success {
+  border-color: rgba(34, 197, 94, 0.28);
+  background: #ecfdf5;
+}
+
+.feedback-box.error {
+  border-color: rgba(239, 68, 68, 0.28);
+  background: #fef2f2;
+}
+
+.hint-card {
+  display: flex;
+  align-items: flex-start;
+  color: #334155;
+}
+
+.empty-state {
+  border: 1px dashed rgba(148, 163, 184, 0.36);
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.table-shell {
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  text-align: left;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+td {
+  color: #334155;
+  vertical-align: top;
+}
+
+@media (max-width: 1280px) {
+  .workspace,
+  .schema-layout,
+  .hero-panel,
+  .result-grid,
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .challenge-list,
+  .hero-grid,
+  .schema-preview-grid,
+  .path-grid,
+  .learn-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  }
+
+  .nav-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .main-shell,
+  .sidebar {
+    padding: 16px;
+  }
+
+  .challenge-list,
+  .detail-grid,
+  .schema-grid,
+  .hero-grid,
+  .schema-preview-grid,
+  .path-grid,
+  .learn-overview,
+  .nav-list {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
