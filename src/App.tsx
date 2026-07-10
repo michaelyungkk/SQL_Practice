@@ -203,11 +203,33 @@ const renderTextWithInlineCode = (text: string): ReactNode[] =>
     return <Fragment key={`${part}-${index}`}>{part}</Fragment>
   })
 
+const getLearnModePracticeSql = (challenge: Challenge) => {
+  const primaryTable = challenge.relevantTables[0]
+  const selectLine =
+    challenge.expectedColumns.length === 1
+      ? `SELECT ${challenge.expectedColumns[0]}`
+      : challenge.expectedColumns.length <= 3
+        ? `SELECT\n  -- ${challenge.expectedColumns.join(', ')}`
+        : 'SELECT\n  -- choose the needed columns'
+
+  const fromLine = primaryTable ? `FROM ${primaryTable}` : 'FROM'
+
+  return `${selectLine}\n${fromLine};`
+}
+
+const getEditorSeedSql = (challenge: Challenge, view: View) => {
+  if (view === 'learn') {
+    return getLearnModePracticeSql(challenge)
+  }
+
+  return challenge.brokenSql ?? challenge.starterSql
+}
+
 const App = () => {
   const [view, setView] = useState<View>('dashboard')
   const [progress, setProgress] = useState<ProgressState>(initialProgress)
   const [selectedChallengeId, setSelectedChallengeId] = useState<string>('beginner-01')
-  const [editorSql, setEditorSql] = useState<string>(lessonsByTrack.beginner[0].starterSql)
+  const [editorSql, setEditorSql] = useState<string>(getEditorSeedSql(lessonsByTrack.beginner[0], 'learn'))
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null)
   const [feedback, setFeedback] = useState<ValidationFeedback>({
     status: 'idle',
@@ -286,7 +308,7 @@ const App = () => {
       return
     }
 
-    setEditorSql(currentChallenge.brokenSql ?? currentChallenge.starterSql)
+    setEditorSql(getEditorSeedSql(currentChallenge, view))
     setHintStep(0)
     setFeedback({
       status: 'idle',
@@ -909,7 +931,13 @@ const App = () => {
                         <span>{view === 'learn' ? 'Your Turn' : 'SQLite Editor'}</span>
                       </div>
                       <div className="toolbar-actions">
-                        <button type="button" className="secondary-button" onClick={() => setEditorSql(currentChallenge.brokenSql ?? currentChallenge.starterSql)}>
+                        {view === 'learn' ? (
+                          <button type="button" className="secondary-button" onClick={() => setEditorSql(getLearnModePracticeSql(currentChallenge))}>
+                            <BookOpen size={16} />
+                            <span>Load Scaffold</span>
+                          </button>
+                        ) : null}
+                        <button type="button" className="secondary-button" onClick={() => setEditorSql(getEditorSeedSql(currentChallenge, view))}>
                           <RefreshCw size={16} />
                           <span>Reset SQL</span>
                         </button>
