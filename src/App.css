@@ -411,6 +411,10 @@ select {
   color: #334155;
 }
 
+.lesson-progress-button {
+  justify-content: center;
+}
+
 select {
   min-width: 180px;
   border: 1px solid rgba(148, 163, 184, 0.26);

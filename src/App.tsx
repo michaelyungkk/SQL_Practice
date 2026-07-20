@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Award,
   BookOpen,
@@ -36,6 +36,7 @@ import type { Challenge, ProgressState, QueryResult, ValidationFeedback } from '
 type View = 'dashboard' | 'learn' | 'practice' | 'career' | 'interview' | 'debug' | 'review' | 'schema'
 
 const progressStorageKey = 'sql-practice-game-progress-v1'
+const progressApiPath = '/api/progress'
 
 const initialProgress: ProgressState = {
   completedIds: [],
@@ -76,7 +77,7 @@ const viewMeta: Record<View, { label: string; icon: typeof LayoutDashboard }> = 
 
 const todayKey = () => new Date().toISOString().slice(0, 10)
 
-const loadProgress = (): ProgressState => {
+const loadLocalProgress = (): ProgressState => {
   const raw = localStorage.getItem(progressStorageKey)
   if (!raw) {
     return initialProgress
@@ -86,6 +87,39 @@ const loadProgress = (): ProgressState => {
     return { ...initialProgress, ...JSON.parse(raw) }
   } catch {
     return initialProgress
+  }
+}
+
+const normalizeProgress = (value: unknown): ProgressState => ({
+  ...initialProgress,
+  ...(typeof value === 'object' && value !== null ? value : {}),
+})
+
+const loadProgress = async (): Promise<ProgressState> => {
+  try {
+    const response = await fetch(progressApiPath, { cache: 'no-store' })
+    if (!response.ok) {
+      throw new Error(`Failed to load progress: ${response.status}`)
+    }
+
+    const data = (await response.json()) as ProgressState
+    return normalizeProgress(data)
+  } catch {
+    return loadLocalProgress()
+  }
+}
+
+const saveProgress = async (progress: ProgressState) => {
+  localStorage.setItem(progressStorageKey, JSON.stringify(progress))
+
+  try {
+    await fetch(progressApiPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(progress),
+    })
+  } catch {
+    // Keep local storage as a fallback if the local file API is unavailable.
   }
 }
 
@@ -203,18 +237,103 @@ const renderTextWithInlineCode = (text: string): ReactNode[] =>
     return <Fragment key={`${part}-${index}`}>{part}</Fragment>
   })
 
+const getBaseSelectPlaceholder = (challenge: Challenge) => {
+  const sql = challenge.solutionSql.toUpperCase()
+
+  if (sql.includes('COUNT(')) return '  COUNT(*) AS metric_name'
+  if (sql.includes('SUM(')) return '  SUM(numeric_column) AS metric_name'
+  if (sql.includes('AVG(')) return '  AVG(numeric_column) AS metric_name'
+  if (sql.includes('MIN(') && sql.includes('MAX(')) return '  MIN(column_name) AS min_value,\n  MAX(column_name) AS max_value'
+  if (sql.includes('MIN(')) return '  MIN(column_name) AS min_value'
+  if (sql.includes('MAX(')) return '  MAX(column_name) AS max_value'
+  if (sql.includes('CASE')) return '  column_name,\n  CASE\n    WHEN condition_1 THEN result_1\n    ELSE fallback_result\n  END AS label_name'
+  if (sql.includes('DISTINCT')) return '  DISTINCT column_name'
+  if (sql.includes('OVER (')) return '  column_name,\n  window_value'
+  if (sql.includes('GROUP BY')) return '  grouping_column,\n  metric_value'
+
+  return '  column_a,\n  column_b'
+}
+
+const getLearnModePatternSql = (challenge: Challenge) => {
+  const sql = challenge.solutionSql.toUpperCase()
+  const joinCount = Math.max(challenge.relevantTables.length - 1, 0)
+  const lines = ['SELECT', getBaseSelectPlaceholder(challenge), 'FROM table_name']
+
+  if (sql.includes('LEFT JOIN')) {
+    for (let index = 0; index < joinCount; index += 1) {
+      lines.push(`LEFT JOIN joined_table_${index + 1} ON join_condition_${index + 1}`)
+    }
+  } else if (sql.includes('INNER JOIN') || sql.includes('JOIN')) {
+    for (let index = 0; index < joinCount; index += 1) {
+      lines.push(`INNER JOIN joined_table_${index + 1} ON join_condition_${index + 1}`)
+    }
+  }
+
+  if (sql.includes('WHERE')) lines.push('WHERE condition_1')
+  if (sql.includes(' AND ')) lines.push('  AND condition_2')
+  if (sql.includes(' OR ')) lines.push('  OR condition_3')
+  if (sql.includes('GROUP BY')) lines.push('GROUP BY grouping_column')
+  if (sql.includes('HAVING')) lines.push('HAVING aggregate_condition')
+  if (sql.includes('ORDER BY')) lines.push('ORDER BY sort_column DESC')
+  if (sql.includes('LIMIT')) lines.push('LIMIT n')
+
+  return `${lines.join('\n')};`
+}
+
 const getLearnModePracticeSql = (challenge: Challenge) => {
-  const primaryTable = challenge.relevantTables[0]
-  const selectLine =
-    challenge.expectedColumns.length === 1
-      ? `SELECT ${challenge.expectedColumns[0]}`
-      : challenge.expectedColumns.length <= 3
-        ? `SELECT\n  -- ${challenge.expectedColumns.join(', ')}`
-        : 'SELECT\n  -- choose the needed columns'
+  const sql = challenge.solutionSql.toUpperCase()
+  const primaryTable = challenge.relevantTables[0] ?? 'table_name'
+  const joinTables = challenge.relevantTables.slice(1)
+  const lines = ['SELECT']
 
-  const fromLine = primaryTable ? `FROM ${primaryTable}` : 'FROM'
+  if (sql.includes('COUNT(')) {
+    lines.push('  COUNT(*) AS metric_name')
+  } else if (sql.includes('SUM(')) {
+    lines.push('  SUM(numeric_column) AS metric_name')
+  } else if (sql.includes('AVG(')) {
+    lines.push('  AVG(numeric_column) AS metric_name')
+  } else if (sql.includes('MIN(') && sql.includes('MAX(')) {
+    lines.push('  MIN(column_name) AS min_value,')
+    lines.push('  MAX(column_name) AS max_value')
+  } else if (sql.includes('CASE')) {
+    lines.push('  -- choose the columns you need,')
+    lines.push('  CASE')
+    lines.push('    WHEN -- condition_1 THEN -- result_1')
+    lines.push('    ELSE -- fallback_result')
+    lines.push('  END AS label_name')
+  } else if (sql.includes('DISTINCT')) {
+    lines.push('  DISTINCT -- unique column')
+  } else if (sql.includes('OVER (')) {
+    lines.push('  -- keep the row-level columns you need,')
+    lines.push('  -- add the window calculation')
+  } else if (sql.includes('GROUP BY')) {
+    lines.push('  -- grouping column,')
+    lines.push('  -- aggregate value')
+  } else {
+    lines.push('  -- choose the columns you need')
+  }
 
-  return `${selectLine}\n${fromLine};`
+  lines.push(`FROM ${primaryTable}`)
+
+  if (sql.includes('LEFT JOIN')) {
+    joinTables.forEach((table) => {
+      lines.push(`LEFT JOIN ${table} ON -- join condition`)
+    })
+  } else if (sql.includes('INNER JOIN') || sql.includes('JOIN')) {
+    joinTables.forEach((table) => {
+      lines.push(`INNER JOIN ${table} ON -- join condition`)
+    })
+  }
+
+  if (sql.includes('WHERE')) lines.push('WHERE -- add the filter')
+  if (sql.includes(' AND ')) lines.push('  AND -- add the second condition')
+  if (sql.includes(' OR ')) lines.push('  OR -- add the alternate condition')
+  if (sql.includes('GROUP BY')) lines.push('GROUP BY -- add the grouping column')
+  if (sql.includes('HAVING')) lines.push('HAVING -- filter grouped results')
+  if (sql.includes('ORDER BY')) lines.push('ORDER BY -- choose the sort column')
+  if (sql.includes('LIMIT')) lines.push('LIMIT -- row count')
+
+  return `${lines.join('\n')};`
 }
 
 const getEditorSeedSql = (challenge: Challenge, view: View) => {
@@ -224,6 +343,13 @@ const getEditorSeedSql = (challenge: Challenge, view: View) => {
 
   return challenge.brokenSql ?? challenge.starterSql
 }
+
+const learnChallenges = [
+  ...lessonsByTrack.beginner,
+  ...lessonsByTrack.intermediate,
+  ...lessonsByTrack.joins,
+  ...lessonsByTrack.advanced,
+]
 
 const App = () => {
   const [view, setView] = useState<View>('dashboard')
@@ -244,14 +370,32 @@ const App = () => {
   const [practiceSeed, setPracticeSeed] = useState(0)
   const [interviewSecondsLeft, setInterviewSecondsLeft] = useState<number | null>(null)
   const [taskMenuCollapsed, setTaskMenuCollapsed] = useState(false)
+  const hasLoadedProgress = useRef(false)
 
   useEffect(() => {
-    setProgress(loadProgress())
+    let cancelled = false
+
+    const initializeProgress = async () => {
+      const savedProgress = await loadProgress()
+      if (!cancelled) {
+        setProgress(savedProgress)
+        hasLoadedProgress.current = true
+      }
+    }
+
+    void initializeProgress()
     getDatabaseSnapshot().then(setDatabasePreview).catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
-    localStorage.setItem(progressStorageKey, JSON.stringify(progress))
+    if (!hasLoadedProgress.current) {
+      return
+    }
+
+    void saveProgress(progress)
   }, [progress])
 
   const reviewChallenges = useMemo(
@@ -301,6 +445,17 @@ const App = () => {
   const nextChallenge = useMemo(
     () => allChallenges.find((challenge) => !progress.completedIds.includes(challenge.id)) ?? null,
     [progress.completedIds],
+  )
+  const currentLearnChallengeIndex = useMemo(
+    () => learnChallenges.findIndex((challenge) => challenge.id === currentChallenge?.id),
+    [currentChallenge?.id],
+  )
+  const nextLearnChallenge = useMemo(
+    () =>
+      currentLearnChallengeIndex >= 0 && currentLearnChallengeIndex < learnChallenges.length - 1
+        ? learnChallenges[currentLearnChallengeIndex + 1]
+        : null,
+    [currentLearnChallengeIndex],
   )
 
   useEffect(() => {
@@ -416,9 +571,20 @@ const App = () => {
     setPracticeSeed((value) => value + 1)
   }
 
+  const handleAdvanceLearnLesson = () => {
+    if (nextLearnChallenge) {
+      setSelectedChallengeId(nextLearnChallenge.id)
+      setTaskMenuCollapsed(true)
+      return
+    }
+
+    setView('dashboard')
+    setTaskMenuCollapsed(false)
+  }
+
   const getLearnModeTheory = (challenge: Challenge) => {
     const conceptLabel = challenge.concept
-    const exampleQuery = challenge.solutionSql
+    const exampleQuery = getLearnModePatternSql(challenge)
     const fallbackMentalModel = challenge.explanation.replace(/^This query works because\s*/i, '')
 
     return {
@@ -850,8 +1016,8 @@ const App = () => {
                         </div>
                         <div className="learn-example">
                           <div className="section-heading">
-                            <h3>Example Query</h3>
-                            <span>Study the pattern before trying it yourself</span>
+                            <h3>Example Pattern</h3>
+                            <span>Study the structure, then solve the task with your own query</span>
                           </div>
                           <div className="example-code">
                             <pre>{renderSqlTokens(getLearnModeTheory(currentChallenge).exampleQuery)}</pre>
@@ -979,6 +1145,11 @@ const App = () => {
                         <p>{feedback.message}</p>
                         {feedback.detail ? <small>{feedback.detail}</small> : null}
                       </div>
+                      {view === 'learn' && feedback.status === 'success' ? (
+                        <button type="button" className="primary-button lesson-progress-button" onClick={handleAdvanceLearnLesson}>
+                          <span>{nextLearnChallenge ? 'Next Lesson' : 'Finish Lessons'}</span>
+                        </button>
+                      ) : null}
 
                       <div className="hint-stack">
                         {currentChallenge.hints.slice(0, hintStep).map((hint, index) => (
