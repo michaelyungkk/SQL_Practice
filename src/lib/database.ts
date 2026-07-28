@@ -26,10 +26,19 @@ type ProductRow = {
 
 let sqlModulePromise: Promise<SqlJsStatic> | null = null
 
+const resolveNodeWasmPath = () => {
+  const url = new URL('../../node_modules/sql.js/dist/sql-wasm.wasm', import.meta.url)
+  const pathname = decodeURIComponent(url.pathname)
+
+  return pathname.startsWith('/') && /^[A-Za-z]:/.test(pathname.slice(1)) ? pathname.slice(1) : pathname
+}
+
+const getWasmLocation = () => (typeof window === 'undefined' ? resolveNodeWasmPath() : wasmUrl)
+
 const getSqlModule = () => {
   if (!sqlModulePromise) {
     sqlModulePromise = initSqlJs({
-      locateFile: () => wasmUrl,
+      locateFile: () => getWasmLocation(),
     })
   }
 

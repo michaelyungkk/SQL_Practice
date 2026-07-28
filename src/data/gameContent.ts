@@ -896,11 +896,11 @@ FROM payments
 WHERE payment_status = 'paid'
 GROUP BY strftime('%Y-%m', payment_date)
 ORDER BY revenue_month;`, ['revenue_month', 'revenue'], 'Revenue trend'],
-  ['career-03', 'Find customers who have not purchased recently.', 'customers, orders', `SELECT c.customer_name, MAX(o.order_date) AS last_order_date
+  ['career-03', 'Find customers whose last order is getting stale.', 'customers, orders', `SELECT c.customer_name, MAX(o.order_date) AS last_order_date
 FROM customers AS c
 JOIN orders AS o ON c.customer_id = o.customer_id
 GROUP BY c.customer_name
-HAVING MAX(o.order_date) < '2025-10-01'
+HAVING MAX(o.order_date) < '2026-10-01'
 ORDER BY last_order_date;`, ['customer_name', 'last_order_date'], 'Churn risk'],
   ['career-04', 'Compare campaign conversion by linked orders.', 'campaigns, orders', `SELECT c.campaign_name, COUNT(o.order_id) AS linked_orders
 FROM campaigns AS c
@@ -986,9 +986,9 @@ ORDER BY margin_proxy DESC;`, ['category_name', 'margin_proxy'], 'Margin reporti
 FROM orders
 GROUP BY device_type
 ORDER BY order_count DESC;`, ['device_type', 'order_count'], 'Device mix'],
-  ['career-15', 'Review customers acquired through paid social.', 'customers', `SELECT customer_name, city, signup_date
+  ['career-15', 'Review customers acquired through email.', 'customers', `SELECT customer_name, city, signup_date
 FROM customers
-WHERE LOWER(acquisition_channel) = 'paid social'
+WHERE LOWER(acquisition_channel) = 'email'
 ORDER BY signup_date DESC;`, ['customer_name', 'city', 'signup_date'], 'Acquisition review'],
   ['career-16', 'Show recent failed payments.', 'payments, orders', `SELECT p.payment_id, p.payment_date, p.amount, o.order_id
 FROM payments AS p
