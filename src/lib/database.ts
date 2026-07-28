@@ -529,3 +529,28 @@ export const getDatabaseSnapshot = async () => {
     db.close()
   }
 }
+
+export const getSchemaOverview = async () => {
+  const SQL = await getSqlModule()
+  const db = new SQL.Database()
+
+  try {
+    db.exec(buildSeedSql())
+
+    const tables = ['customers', 'categories', 'products', 'inventory', 'campaigns', 'orders', 'order_items', 'payments', 'web_events']
+    const counts = Object.fromEntries(
+      tables.map((table) => {
+        const result = convertExecResult(db, `SELECT COUNT(*) AS row_count FROM ${table};`)
+        return [table, Number(result.rows[0]?.[0] ?? 0)]
+      }),
+    ) as Record<string, number>
+
+    const samples = Object.fromEntries(
+      tables.map((table) => [table, convertExecResult(db, `SELECT * FROM ${table} LIMIT 1;`)]),
+    ) as Record<string, QueryResult>
+
+    return { counts, samples }
+  } finally {
+    db.close()
+  }
+}

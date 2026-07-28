@@ -78,4 +78,12 @@ export interface ProgressState {
   editorDrafts: Record<string, string>
   hintSteps: Record<string, number>
   queryHistory: Record<string, string[]>
+  reviewSchedule: Record<
+    string,
+    {
+      stage: number
+      nextDue: string
+      variantSeed: number
+    }
+  >
 }

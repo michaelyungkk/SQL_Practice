@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
+  ArrowRight,
   Award,
   BookOpen,
   Briefcase,
@@ -29,7 +30,7 @@ import {
   lessonsByTrack,
   schemaTables,
 } from './data/gameContent'
-import { getDatabaseSnapshot, runSql } from './lib/database'
+import { getDatabaseSnapshot, getSchemaOverview, runSql } from './lib/database'
 import { compareResults, syntaxFeedback } from './lib/validation'
 import type { Challenge, ProgressState, QueryResult, ValidationFeedback } from './types'
 
@@ -51,6 +52,7 @@ const initialProgress: ProgressState = {
   editorDrafts: {},
   hintSteps: {},
   queryHistory: {},
+  reviewSchedule: {},
 }
 
 const rankSteps = [
@@ -267,6 +269,72 @@ GROUP BY strftime('%Y-%m', payment_date);`,
     note: '`strftime` is useful for monthly cohorts, trends, and reporting periods.',
   },
   {
+    title: 'Between Ranges',
+    summary: 'Use `BETWEEN` to keep values inside an inclusive range.',
+    syntax: `SELECT product_name, price
+FROM products
+WHERE price BETWEEN 50 AND 120;`,
+    note: '`BETWEEN` includes both endpoints, so it is a concise way to write closed ranges.',
+  },
+  {
+    title: 'In Lists',
+    summary: 'Use `IN` when one column should match one of several values.',
+    syntax: `SELECT customer_name, segment
+FROM customers
+WHERE segment IN ('New', 'VIP');`,
+    note: '`IN` is a cleaner alternative to repeating many `OR` comparisons.',
+  },
+  {
+    title: 'Exists Subquery',
+    summary: 'Use `EXISTS` to check whether a related subquery returns at least one row.',
+    syntax: `SELECT c.customer_id, c.customer_name
+FROM customers AS c
+WHERE EXISTS (
+  SELECT 1
+  FROM orders AS o
+  WHERE o.customer_id = c.customer_id
+);`,
+    note: 'This pattern is useful when you only care whether a related record exists, not how many there are.',
+  },
+  {
+    title: 'Coalesce Missing Values',
+    summary: 'Use `COALESCE` to replace `NULL` with a fallback value.',
+    syntax: `SELECT order_id,
+       COALESCE(campaign_id, 0) AS campaign_id_fallback
+FROM orders;`,
+    note: '`COALESCE` returns the first non-null expression, which helps when a report needs a default.',
+  },
+  {
+    title: 'Cast Values',
+    summary: 'Use `CAST` to convert a value into another type.',
+    syntax: `SELECT CAST(amount AS INTEGER) AS whole_dollars
+FROM payments;`,
+    note: 'Type conversion is helpful when formatting output or aligning values for comparison.',
+  },
+  {
+    title: 'String Functions',
+    summary: 'Use functions like `LOWER`, `TRIM`, `SUBSTR`, `LENGTH`, and `REPLACE` for text cleanup.',
+    syntax: `SELECT REPLACE(LOWER(TRIM(channel)), 'paid ', '') AS clean_channel
+FROM campaigns;`,
+    note: 'Text functions help normalize noisy labels before grouping or filtering.',
+  },
+  {
+    title: 'Date Arithmetic',
+    summary: 'Use date modifiers to shift dates forward or backward.',
+    syntax: `SELECT order_id,
+       date(order_date, '+7 days') AS follow_up_date
+FROM orders;`,
+    note: 'SQLite date modifiers are useful for deadline checks and cohort windows.',
+  },
+  {
+    title: 'Set Operations',
+    summary: 'Use `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT` to combine or compare result sets.',
+    syntax: `SELECT customer_id FROM orders
+UNION
+SELECT customer_id FROM web_events;`,
+    note: 'Use `UNION` when duplicates should be removed, and `UNION ALL` when they should be kept.',
+  },
+  {
     title: 'Data Cleaning',
     summary: 'Use functions like `LOWER` and `TRIM` to normalize text before analysis.',
     syntax: `SELECT DISTINCT LOWER(TRIM(acquisition_channel)) AS clean_channel
@@ -346,13 +414,133 @@ FROM paid_orders;`,
 FROM monthly_revenue;`,
     note: 'This pattern is common for revenue tracking and progress-to-date charts.',
   },
+  {
+    title: 'Window Frame',
+    summary: 'Use a frame clause to control which surrounding rows are included in a window calculation.',
+    syntax: `SELECT order_month,
+       revenue,
+       AVG(revenue) OVER (
+         ORDER BY order_month
+         ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+       ) AS rolling_avg_3
+FROM monthly_revenue;`,
+    note: 'Frames make moving averages and trailing windows explicit.',
+  },
+  {
+    title: 'Recursive CTE',
+    summary: 'Use `WITH RECURSIVE` when a query needs to build rows step by step.',
+    syntax: `WITH RECURSIVE date_series(day) AS (
+  SELECT date('2026-01-01')
+  UNION ALL
+  SELECT date(day, '+1 day')
+  FROM date_series
+  WHERE day < date('2026-01-07')
+)
+SELECT day
+FROM date_series;`,
+    note: 'Recursive CTEs are useful for calendars, hierarchies, and sequence generation.',
+  },
+  {
+    title: 'Query Plan',
+    summary: 'Use `EXPLAIN QUERY PLAN` to inspect how SQLite intends to run a query.',
+    syntax: `EXPLAIN QUERY PLAN
+SELECT customer_id, COUNT(*)
+FROM orders
+GROUP BY customer_id;`,
+    note: 'Query plans help you reason about indexes, scans, and the cost of a query shape.',
+  },
 ]
+
+const schemaRelations = [
+  {
+    from: 'customers',
+    to: 'orders',
+    fromColumn: 'customer_id',
+    toColumn: 'customer_id',
+    relationship: '1 customer to many orders',
+    note: 'Orders inherit the customer profile and segment from this join path.',
+  },
+  {
+    from: 'customers',
+    to: 'web_events',
+    fromColumn: 'customer_id',
+    toColumn: 'customer_id',
+    relationship: '1 customer to many events',
+    note: 'Use this path when you need session or funnel behavior by customer.',
+  },
+  {
+    from: 'categories',
+    to: 'products',
+    fromColumn: 'category_id',
+    toColumn: 'category_id',
+    relationship: '1 category to many products',
+    note: 'This is the main merchandising hierarchy in the catalog.',
+  },
+  {
+    from: 'products',
+    to: 'inventory',
+    fromColumn: 'product_id',
+    toColumn: 'product_id',
+    relationship: '1 product to 1 inventory row',
+    note: 'Inventory is keyed by product, so the join stays at product grain.',
+  },
+  {
+    from: 'orders',
+    to: 'order_items',
+    fromColumn: 'order_id',
+    toColumn: 'order_id',
+    relationship: '1 order to many line items',
+    note: 'Use this path for revenue, quantity, and basket analysis.',
+  },
+  {
+    from: 'products',
+    to: 'order_items',
+    fromColumn: 'product_id',
+    toColumn: 'product_id',
+    relationship: '1 product to many line items',
+    note: 'This is the path for product-level sales analysis.',
+  },
+  {
+    from: 'orders',
+    to: 'payments',
+    fromColumn: 'order_id',
+    toColumn: 'order_id',
+    relationship: '1 order to 1 payment record',
+    note: 'Use this join when the business question is about paid revenue or payment status.',
+  },
+  {
+    from: 'campaigns',
+    to: 'orders',
+    fromColumn: 'campaign_id',
+    toColumn: 'campaign_id',
+    relationship: '1 campaign to many orders',
+    note: 'Campaign attribution flows through this optional foreign key.',
+  },
+  {
+    from: 'campaigns',
+    to: 'web_events',
+    fromColumn: 'campaign_id',
+    toColumn: 'campaign_id',
+    relationship: '1 campaign to many events',
+    note: 'Campaign exposure can be studied at the event level here.',
+  },
+] as const
 
 const todayKey = () => new Date().toISOString().slice(0, 10)
 
 const isKnownView = (value: unknown): value is View => typeof value === 'string' && value in viewMeta
 
 const pushRecentValue = <T,>(existing: T[] | undefined, value: T, maxItems = 5) => [value, ...(existing ?? [])].slice(0, maxItems)
+
+const reviewIntervals = [1, 3, 7]
+
+const addDays = (dateKey: string, days: number) => {
+  const date = new Date(`${dateKey}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+const isDueOnOrBeforeToday = (dateKey: string) => dateKey <= todayKey()
 
 const loadLocalProgress = (): ProgressState => {
   const raw = localStorage.getItem(progressStorageKey)
@@ -466,6 +654,28 @@ const sqlKeywords = new Set([
   'DENSE_RANK',
   'LAG',
   'LEAD',
+  'UNION',
+  'ALL',
+  'INTERSECT',
+  'EXCEPT',
+  'IN',
+  'BETWEEN',
+  'EXISTS',
+  'COALESCE',
+  'CAST',
+  'NULLIF',
+  'SUBSTR',
+  'LENGTH',
+  'REPLACE',
+  'DATE',
+  'DATETIME',
+  'JULIANDAY',
+  'RECURSIVE',
+  'ROWS',
+  'RANGE',
+  'PRECEDING',
+  'FOLLOWING',
+  'CURRENT',
   'ROUND',
   'STRFTIME',
 ])
@@ -632,6 +842,64 @@ const getLearnModePracticeSql = (challenge: Challenge) => {
   return `${lines.join('\n')};`
 }
 
+const getClauseHint = (challenge: Challenge) => {
+  const sql = challenge.solutionSql.toUpperCase()
+
+  if (sql.includes('JOIN')) {
+    return `You probably need a join between ${challenge.relevantTables.slice(0, 2).join(' and ')}.`
+  }
+  if (sql.includes('HAVING')) {
+    return 'Group first, then use `HAVING` to filter the grouped result.'
+  }
+  if (sql.includes('GROUP BY')) {
+    return 'The non-aggregate columns in the `SELECT` list usually need to appear in `GROUP BY`.'
+  }
+  if (sql.includes('WHERE')) {
+    return 'Put the filter in `WHERE` before the aggregation step.'
+  }
+  if (sql.includes('ORDER BY') && sql.includes('LIMIT')) {
+    return 'Sort first, then limit the rows.'
+  }
+  if (sql.includes('CASE')) {
+    return 'Build the buckets from top to bottom with `CASE WHEN`.'
+  }
+  if (sql.includes('DISTINCT')) {
+    return 'Use `DISTINCT` right after `SELECT` to remove duplicate values.'
+  }
+  if (sql.includes('OVER (')) {
+    return 'Keep the detail rows and add the window function with `OVER`.'
+  }
+
+  return 'Translate the business rule into the query clause that changes the result shape.'
+}
+
+const getAdaptiveCoachHint = (challenge: Challenge, attemptCount: number) => {
+  if (attemptCount <= 0) {
+    return null
+  }
+
+  if (attemptCount === 1) {
+    return `Concept reminder: ${challenge.concept}.`
+  }
+
+  if (attemptCount === 2) {
+    return `Tables and output: ${challenge.relevantTables.join(', ')}. Return ${challenge.expectedColumns.join(', ')}.`
+  }
+
+  if (attemptCount === 3) {
+    return `Clause hint: ${getClauseHint(challenge)}`
+  }
+
+  if (attemptCount === 4) {
+    return `Partial structure:\n${getLearnModePracticeSql(challenge)}`
+  }
+
+  return `Worked solution:\n${challenge.solutionSql}`
+}
+
+const renderHintBody = (hint: string) =>
+  hint.includes('\n') ? <pre>{renderSqlTokens(hint)}</pre> : <span>{renderTextWithInlineCode(hint)}</span>
+
 const getEditorSeedSql = (challenge: Challenge, view: View) => {
   if (view === 'learn') {
     return getLearnModePatternSql(challenge)
@@ -642,6 +910,70 @@ const getEditorSeedSql = (challenge: Challenge, view: View) => {
   }
 
   return getLearnModePatternSql(challenge)
+}
+
+const getReviewCandidates = (sourceChallenge: Challenge) => {
+  const exactConceptMatches = allChallenges.filter(
+    (challenge) => challenge.id !== sourceChallenge.id && challenge.concept === sourceChallenge.concept,
+  )
+
+  if (exactConceptMatches.length > 0) {
+    return exactConceptMatches
+  }
+
+  const sameTrackMatches = allChallenges.filter(
+    (challenge) => challenge.id !== sourceChallenge.id && challenge.track === sourceChallenge.track,
+  )
+
+  if (sameTrackMatches.length > 0) {
+    return sameTrackMatches
+  }
+
+  return allChallenges.filter((challenge) => challenge.id !== sourceChallenge.id)
+}
+
+const getReviewChallenge = (sourceChallenge: Challenge, stage: number, variantSeed: number) => {
+  const candidates = getReviewCandidates(sourceChallenge)
+  if (candidates.length === 0) {
+    return sourceChallenge
+  }
+
+  const index = (stage + variantSeed) % candidates.length
+  return candidates[index] ?? sourceChallenge
+}
+
+const getReviewProgression = (stage: number) => reviewIntervals[Math.min(stage, reviewIntervals.length - 1)]
+
+const createReviewScheduleEntry = (stage = 0, variantSeed = 0) => ({
+  stage,
+  nextDue: addDays(todayKey(), getReviewProgression(stage)),
+  variantSeed,
+})
+
+const advanceReviewScheduleEntry = (currentEntry: { stage: number; variantSeed: number } | undefined, succeeded: boolean) => {
+  if (!currentEntry) {
+    return createReviewScheduleEntry()
+  }
+
+  if (succeeded) {
+    const nextStage = currentEntry.stage + 1
+
+    if (nextStage >= reviewIntervals.length) {
+      return null
+    }
+
+    return {
+      stage: nextStage,
+      nextDue: addDays(todayKey(), reviewIntervals[nextStage]),
+      variantSeed: 0,
+    }
+  }
+
+  return {
+    stage: currentEntry.stage,
+    nextDue: addDays(todayKey(), reviewIntervals[Math.min(currentEntry.stage, reviewIntervals.length - 1)]),
+    variantSeed: currentEntry.variantSeed + 1,
+  }
 }
 
 const learnChallenges = [
@@ -670,7 +1002,11 @@ const App = () => {
   const [practiceSeed, setPracticeSeed] = useState(0)
   const [interviewSecondsLeft, setInterviewSecondsLeft] = useState<number | null>(null)
   const [taskMenuCollapsed, setTaskMenuCollapsed] = useState(false)
+  const [activeReviewSourceId, setActiveReviewSourceId] = useState<string | null>(null)
   const [progressReady, setProgressReady] = useState(false)
+  const [schemaOverview, setSchemaOverview] = useState<{ counts: Record<string, number>; samples: Record<string, QueryResult> } | null>(null)
+  const [syntaxSearch, setSyntaxSearch] = useState('')
+  const [queryExplanation, setQueryExplanation] = useState<string[] | null>(null)
   const hasLoadedProgress = useRef(false)
   const draftStoreRef = useRef(progress.editorDrafts)
   const hintStoreRef = useRef(progress.hintSteps)
@@ -682,6 +1018,15 @@ const App = () => {
       const savedProgress = await loadProgress()
       if (!cancelled) {
         setProgress(savedProgress)
+        if (savedProgress.lastView && isKnownView(savedProgress.lastView)) {
+          setView(savedProgress.lastView)
+        }
+        if (savedProgress.selectedChallengeId) {
+          setSelectedChallengeId(savedProgress.selectedChallengeId)
+        }
+        if (savedProgress.reviewSchedule) {
+          // No-op; the schedule is restored through progress and normalized on load.
+        }
         hasLoadedProgress.current = true
         setProgressReady(true)
       }
@@ -689,6 +1034,7 @@ const App = () => {
 
     void initializeProgress()
     getDatabaseSnapshot().then(setDatabasePreview).catch(() => undefined)
+    getSchemaOverview().then(setSchemaOverview).catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -709,20 +1055,6 @@ const App = () => {
   useEffect(() => {
     hintStoreRef.current = progress.hintSteps
   }, [progress.hintSteps])
-
-  useEffect(() => {
-    if (!progressReady) {
-      return
-    }
-
-    if (progress.lastView && isKnownView(progress.lastView) && progress.lastView !== view) {
-      setView(progress.lastView)
-    }
-
-    if (progress.selectedChallengeId && progress.selectedChallengeId !== selectedChallengeId) {
-      setSelectedChallengeId(progress.selectedChallengeId)
-    }
-  }, [progress.selectedChallengeId, progress.lastView, progressReady, selectedChallengeId, view])
 
   useEffect(() => {
     if (!progressReady) {
@@ -754,10 +1086,35 @@ const App = () => {
     )
   }, [progressReady, selectedChallengeId])
 
-  const reviewChallenges = useMemo(
-    () => allChallenges.filter((challenge) => progress.incorrectIds.includes(challenge.id)),
-    [progress.incorrectIds],
-  )
+  useEffect(() => {
+    if (!progressReady) {
+      return
+    }
+
+    const missingSchedules = progress.incorrectIds.filter((challengeId) => !progress.reviewSchedule[challengeId])
+    if (missingSchedules.length === 0) {
+      return
+    }
+
+    setProgress((current) => {
+      const nextSchedule = { ...current.reviewSchedule }
+
+      missingSchedules.forEach((challengeId) => {
+        nextSchedule[challengeId] = createReviewScheduleEntry()
+      })
+
+      return {
+        ...current,
+        reviewSchedule: nextSchedule,
+      }
+    })
+  }, [progress.incorrectIds, progress.reviewSchedule, progressReady])
+
+  useEffect(() => {
+    if (view !== 'review') {
+      setActiveReviewSourceId(null)
+    }
+  }, [view])
 
   const practicePool = useMemo(() => {
     return [
@@ -783,13 +1140,54 @@ const App = () => {
     return practicePool[practiceSeed % practicePool.length]
   }, [practicePool, practiceSeed])
 
+  const reviewQueue = useMemo(() => {
+    return Object.entries(progress.reviewSchedule)
+      .map(([sourceChallengeId, entry]) => {
+        const sourceChallenge = allChallenges.find((challenge) => challenge.id === sourceChallengeId)
+
+        if (!sourceChallenge) {
+          return null
+        }
+
+        return {
+          sourceChallengeId,
+          sourceChallenge,
+          reviewChallenge: getReviewChallenge(sourceChallenge, entry.stage, entry.variantSeed),
+          stage: entry.stage,
+          nextDue: entry.nextDue,
+          variantSeed: entry.variantSeed,
+          due: isDueOnOrBeforeToday(entry.nextDue),
+        }
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .sort(
+        (left, right) =>
+          left.nextDue.localeCompare(right.nextDue) ||
+          left.stage - right.stage ||
+          left.sourceChallenge.title.localeCompare(right.sourceChallenge.title),
+      )
+  }, [progress.reviewSchedule])
+
+  const dueReviewQueue = useMemo(() => reviewQueue.filter((entry) => entry.due), [reviewQueue])
+
   const currentChallenge = useMemo(() => {
     if (view === 'practice') {
       return practiceChallenge
     }
 
+    if (view === 'review') {
+      if (activeReviewSourceId) {
+        const activeEntry = reviewQueue.find((entry) => entry.sourceChallengeId === activeReviewSourceId)
+        if (activeEntry) {
+          return activeEntry.reviewChallenge
+        }
+      }
+
+      return dueReviewQueue[0]?.reviewChallenge ?? reviewQueue[0]?.reviewChallenge ?? null
+    }
+
     return allChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? lessonsByTrack.beginner[0]
-  }, [practiceChallenge, selectedChallengeId, view])
+  }, [activeReviewSourceId, dueReviewQueue, practiceChallenge, reviewQueue, selectedChallengeId, view])
 
   const completedChallenges = useMemo(
     () => allChallenges.filter((challenge) => progress.completedIds.includes(challenge.id)),
@@ -806,6 +1204,22 @@ const App = () => {
     () => learnChallenges.findIndex((challenge) => challenge.id === currentChallenge?.id),
     [currentChallenge?.id],
   )
+  const currentAttemptCount = useMemo(
+    () => (currentChallenge ? progress.queryHistory[currentChallenge.id]?.length ?? 0 : 0),
+    [currentChallenge, progress.queryHistory],
+  )
+  const filteredSyntaxReference = useMemo(() => {
+    const term = syntaxSearch.trim().toLowerCase()
+    if (!term) {
+      return syntaxReference
+    }
+
+    return syntaxReference.filter((entry) =>
+      [entry.title, entry.summary, entry.note, entry.syntax].some((field) => field.toLowerCase().includes(term)),
+    )
+  }, [syntaxSearch])
+  const queryExplanationLines = queryExplanation ?? []
+  const followUpPrompt = currentChallenge ? getFollowUpPrompt(currentChallenge) : null
   const nextLearnChallenge = useMemo(
     () =>
       currentLearnChallengeIndex >= 0 && currentLearnChallengeIndex < learnChallenges.length - 1
@@ -830,6 +1244,7 @@ const App = () => {
       message: currentChallenge.task,
     })
     setQueryResult(null)
+    setQueryExplanation(null)
 
     if (view === 'interview' && currentChallenge.timeLimitSec) {
       setInterviewSecondsLeft(currentChallenge.timeLimitSec)
@@ -850,15 +1265,37 @@ const App = () => {
     return () => window.clearTimeout(timer)
   }, [interviewSecondsLeft, view])
 
-  const markChallengeResult = (challenge: Challenge, wasSuccessful: boolean) => {
+  const markChallengeResult = (challenge: Challenge, wasSuccessful: boolean, reviewSourceId?: string) => {
     setProgress((current) => {
+      const scheduleKey = reviewSourceId ?? challenge.id
+      const currentScheduleEntry = current.reviewSchedule[scheduleKey]
+      let reviewSchedule = current.reviewSchedule
+
+      if (wasSuccessful && reviewSourceId && currentScheduleEntry) {
+        const nextSchedule = advanceReviewScheduleEntry(currentScheduleEntry, true)
+        if (nextSchedule === null) {
+          reviewSchedule = Object.fromEntries(Object.entries(current.reviewSchedule).filter(([id]) => id !== scheduleKey))
+        } else {
+          reviewSchedule = {
+            ...current.reviewSchedule,
+            [scheduleKey]: nextSchedule,
+          }
+        }
+      } else if (!wasSuccessful) {
+        const nextSchedule = advanceReviewScheduleEntry(currentScheduleEntry, false) ?? createReviewScheduleEntry()
+        reviewSchedule = {
+          ...current.reviewSchedule,
+          [scheduleKey]: nextSchedule,
+        }
+      }
+
       const completedIds = wasSuccessful
         ? Array.from(new Set([...current.completedIds, challenge.id]))
         : current.completedIds
 
       const incorrectIds = wasSuccessful
-        ? current.incorrectIds.filter((id) => id !== challenge.id)
-        : Array.from(new Set([...current.incorrectIds, challenge.id]))
+        ? current.incorrectIds.filter((id) => id !== scheduleKey && id !== challenge.id)
+        : Array.from(new Set([...current.incorrectIds, scheduleKey]))
 
       const alreadyCompleted = current.completedIds.includes(challenge.id)
       const xp = wasSuccessful && !alreadyCompleted ? current.xp + challenge.xpReward : current.xp
@@ -885,6 +1322,7 @@ const App = () => {
         bestInterviewScore,
         lastActiveDate: wasSuccessful ? todayKey() : current.lastActiveDate,
         badges: deriveBadges(completed, bestInterviewScore),
+        reviewSchedule,
       }
     })
   }
@@ -912,7 +1350,11 @@ const App = () => {
       const expectedResult = await runSql(currentChallenge.solutionSql)
       const validation = compareResults(currentChallenge, editorSql, userResult, expectedResult)
       setFeedback(validation)
-      markChallengeResult(currentChallenge, validation.status === 'success')
+      markChallengeResult(currentChallenge, validation.status === 'success', activeReviewSourceId ?? undefined)
+
+      if (validation.status === 'error') {
+        setHintStep((step) => Math.max(step, Math.min(currentChallenge.hints.length, currentAttemptCount + 1)))
+      }
     } catch (error) {
       setFeedback(syntaxFeedback(error))
       markChallengeResult(currentChallenge, false)
@@ -931,6 +1373,7 @@ const App = () => {
 
   const handleEditorChange = (value: string) => {
     setEditorSql(value)
+    setQueryExplanation(null)
 
     if (!currentChallenge || !progressReady) {
       return
@@ -947,10 +1390,23 @@ const App = () => {
 
   const selectChallenge = (challenge: Challenge) => {
     setSelectedChallengeId(challenge.id)
+    setActiveReviewSourceId(null)
     setTaskMenuCollapsed(true)
     if (view === 'practice') {
       setView('learn')
     }
+  }
+
+  const selectReviewChallenge = (sourceChallengeId: string) => {
+    const entry = reviewQueue.find((item) => item.sourceChallengeId === sourceChallengeId)
+    if (!entry) {
+      return
+    }
+
+    setActiveReviewSourceId(sourceChallengeId)
+    setSelectedChallengeId(entry.reviewChallenge.id)
+    setView('review')
+    setTaskMenuCollapsed(true)
   }
 
   const randomizePracticeChallenge = () => {
@@ -994,6 +1450,112 @@ const App = () => {
     }
   }
 
+  function getFollowUpPrompt(challenge: Challenge) {
+    if (challenge.followUp) {
+      return challenge.followUp
+    }
+
+    const sql = challenge.solutionSql.toUpperCase()
+
+    if (sql.includes('JOIN')) {
+      return 'Try the same join with a different table pair or a different join key.'
+    }
+
+    if (sql.includes('GROUP BY')) {
+      return 'Change the grouping column or threshold and see which rows move.'
+    }
+
+    if (sql.includes('CASE')) {
+      return 'Adjust one bucket cutoff and check whether the labels still make sense.'
+    }
+
+    if (sql.includes('WHERE')) {
+      return 'Swap the filter value for a different segment and compare the output.'
+    }
+
+    if (sql.includes('OVER (')) {
+      return 'Try partitioning or ordering the window function differently.'
+    }
+
+    return 'Change one piece of the query and observe how the result changes.'
+  }
+
+  const explainQuery = (sql: string) => {
+    const trimmed = sql.trim()
+
+    if (!trimmed) {
+      return ['Type or paste a query first, then ask for an explanation.']
+    }
+
+    const normalized = trimmed.replace(/\s+/g, ' ')
+    const upper = normalized.toUpperCase()
+    const lines: string[] = []
+    let step = 1
+    const sources = Array.from(
+      new Set([
+        ...(normalized.match(/\bFROM\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi) ?? []).map((match) => match.replace(/\bFROM\s+/i, '').trim()),
+        ...((normalized.match(/\bJOIN\s+([a-zA-Z_][a-zA-Z0-9_]*)/gi) ?? []).map((match) => match.replace(/\bJOIN\s+/i, '').trim())),
+      ]),
+    )
+
+    if (upper.startsWith('WITH ')) {
+      lines.push(`${step}. Build the common table expression(s) first, then use the final SELECT on top of them.`)
+      step += 1
+    }
+
+    if (sources.length > 0) {
+      lines.push(`${step}. Read rows from: ${sources.join(', ')}.`)
+    } else {
+      lines.push(`${step}. Read rows from the source table(s) named in the FROM clause.`)
+    }
+    step += 1
+
+    if (upper.includes('JOIN')) {
+      lines.push(`${step}. Join related tables before the filter or aggregation step finishes.`)
+      step += 1
+    }
+
+    if (upper.includes('WHERE')) {
+      lines.push(`${step}. Filter the raw rows with WHERE so only qualifying records continue.`)
+      step += 1
+    }
+
+    if (upper.includes('GROUP BY')) {
+      lines.push(`${step}. Collapse rows to the grouping grain before computing aggregates.`)
+      step += 1
+    }
+
+    if (upper.includes('HAVING')) {
+      lines.push(`${step}. Remove grouped results that do not meet the aggregate rule.`)
+      step += 1
+    }
+
+    if (upper.includes('CASE')) {
+      lines.push(`${step}. Use CASE to label or bucket each row after the needed columns are available.`)
+      step += 1
+    }
+
+    if (upper.includes('OVER (')) {
+      lines.push(`${step}. Evaluate the window function across the ordered or partitioned row set.`)
+      step += 1
+    }
+
+    if (upper.includes('ORDER BY')) {
+      lines.push(`${step}. Sort the final rows before the result is shown.`)
+      step += 1
+    }
+
+    if (upper.includes('LIMIT')) {
+      lines.push(`${step}. Keep only the first N rows after sorting.`)
+    }
+
+    return lines.length > 0 ? lines : ['This query is very short, so the explanation is mostly about the SELECT list and source table.']
+  }
+
+  const handleExplainQuery = () => {
+    setQueryExplanation(explainQuery(editorSql))
+  }
+
   const renderChallengeList = (challenges: Challenge[]) => (
     <div className="challenge-list">
       {challenges.map((challenge) => {
@@ -1015,6 +1577,35 @@ const App = () => {
             <div className="challenge-meta">
               <span>{challenge.difficulty}</span>
               <span>{challenge.xpReward} XP</span>
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+
+  const renderReviewChallengeList = (items: typeof reviewQueue) => (
+    <div className="challenge-list">
+      {items.map((item) => {
+        const active = activeReviewSourceId === item.sourceChallengeId
+
+        return (
+          <button
+            key={`${item.sourceChallengeId}-${item.stage}-${item.variantSeed}`}
+            type="button"
+            className={`challenge-card ${active ? 'active' : ''}`}
+            onClick={() => selectReviewChallenge(item.sourceChallengeId)}
+          >
+            <div className="challenge-topline">
+              <span>{item.reviewChallenge.title}</span>
+              <ShieldCheck size={16} />
+            </div>
+            <p>{item.sourceChallenge.concept}</p>
+            <div className="challenge-meta">
+              <span>
+                Stage {item.stage + 1}/3 {item.due ? 'due now' : `due ${item.nextDue}`}
+              </span>
+              <span>{item.reviewChallenge.xpReward} XP</span>
             </div>
           </button>
         )
@@ -1045,8 +1636,16 @@ const App = () => {
       case 'debug':
         return renderChallengeList(debugModeChallenges)
       case 'review':
-        return reviewChallenges.length > 0 ? (
-          renderChallengeList(reviewChallenges)
+        return reviewQueue.length > 0 ? (
+          <>
+            <section className="mode-section">
+              <div className="section-heading">
+                <h3>Due now</h3>
+                <span>{dueReviewQueue.length} scheduled reviews</span>
+              </div>
+              {renderReviewChallengeList(dueReviewQueue.length > 0 ? dueReviewQueue : reviewQueue)}
+            </section>
+          </>
         ) : (
           <div className="empty-state">You have no review items yet. Missed challenges will land here automatically.</div>
         )
@@ -1246,6 +1845,33 @@ const App = () => {
                 <h3>Schema Viewer</h3>
                 <span>Know your tables before you write SQL</span>
               </div>
+              <div className="relationship-map">
+                {schemaRelations.map((relation) => {
+                  const leftCount = schemaOverview?.counts[relation.from]
+                  const rightCount = schemaOverview?.counts[relation.to]
+
+                  return (
+                    <article key={`${relation.from}-${relation.to}-${relation.fromColumn}-${relation.toColumn}`} className="relationship-card">
+                      <div className="relationship-path">
+                        <strong>{relation.from}</strong>
+                        <ArrowRight size={14} />
+                        <strong>{relation.to}</strong>
+                      </div>
+                      <p>{relation.note}</p>
+                      <small>
+                        {relation.fromColumn} → {relation.toColumn}
+                      </small>
+                      <div className="relationship-meta">
+                        <span>{relation.relationship}</span>
+                        <span>
+                          {typeof leftCount === 'number' ? `${leftCount} rows` : 'Loading'} ·{' '}
+                          {typeof rightCount === 'number' ? `${rightCount} rows` : 'Loading'}
+                        </span>
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
               <div className="schema-grid">
                 {schemaTables.map((table) => (
                   <article key={table.name} className="schema-card">
@@ -1319,8 +1945,29 @@ const App = () => {
               </div>
             </div>
 
+            <div className="panel syntax-search-panel">
+              <div className="section-heading">
+                <h3>Search syntax</h3>
+                <span>Filter the guide by clause, function, or keyword</span>
+              </div>
+              <div className="syntax-search-bar">
+                <label>
+                  Search
+                  <input
+                    type="search"
+                    value={syntaxSearch}
+                    onChange={(event) => setSyntaxSearch(event.target.value)}
+                    placeholder="Try join, window, null, range, or date"
+                  />
+                </label>
+                <button type="button" className="secondary-button" onClick={() => setSyntaxSearch('')}>
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <div className="syntax-grid">
-              {syntaxReference.map((entry) => (
+              {filteredSyntaxReference.map((entry) => (
                 <article key={entry.title} className="panel syntax-card">
                   <div className="section-heading">
                     <h3>{entry.title}</h3>
@@ -1332,6 +1979,11 @@ const App = () => {
                   <p className="syntax-note">{renderTextWithInlineCode(entry.note)}</p>
                 </article>
               ))}
+              {filteredSyntaxReference.length === 0 ? (
+                <div className="panel empty-state syntax-empty-state">
+                  No syntax patterns matched that search. Try `join`, `window`, `date`, or `null`.
+                </div>
+              ) : null}
             </div>
           </section>
         ) : (
@@ -1527,6 +2179,10 @@ const App = () => {
                         <span>{view === 'learn' ? 'Your Turn' : 'SQLite Editor'}</span>
                       </div>
                       <div className="toolbar-actions">
+                        <button type="button" className="secondary-button" onClick={handleExplainQuery}>
+                          <Search size={16} />
+                          <span>Explain my query</span>
+                        </button>
                         {view === 'learn' ? (
                           <button
                             type="button"
@@ -1583,6 +2239,25 @@ const App = () => {
                         <p>{feedback.message}</p>
                         {feedback.detail ? <small>{feedback.detail}</small> : null}
                       </div>
+                      {currentChallenge ? (
+                        <div className="hint-card adaptive-hint">
+                          <Search size={14} />
+                          <span>{renderHintBody(getAdaptiveCoachHint(currentChallenge, currentAttemptCount) ?? 'Run the query once to unlock the first coach hint.')}</span>
+                        </div>
+                      ) : null}
+                      {queryExplanationLines.length > 0 ? (
+                        <div className="query-explanation-card">
+                          <div className="section-heading">
+                            <h4>How this query runs</h4>
+                            <span>Execution order and business meaning</span>
+                          </div>
+                          <ol>
+                            {queryExplanationLines.map((line, index) => (
+                              <li key={`${index}-${line}`}>{line}</li>
+                            ))}
+                          </ol>
+                        </div>
+                      ) : null}
                       {view === 'learn' && feedback.status === 'success' ? (
                         <button type="button" className="primary-button lesson-progress-button" onClick={handleAdvanceLearnLesson}>
                           <span>{nextLearnChallenge ? 'Next Lesson' : 'Finish Lessons'}</span>
@@ -1593,7 +2268,7 @@ const App = () => {
                         {currentChallenge.hints.slice(0, hintStep).map((hint, index) => (
                           <div key={`${currentChallenge.id}-hint-${index}`} className="hint-card">
                             <Search size={14} />
-                            <span>{hint}</span>
+                            {renderHintBody(hint)}
                           </div>
                         ))}
                         {hintStep < currentChallenge.hints.length ? (
@@ -1621,6 +2296,12 @@ const App = () => {
                       </div>
 
                       <div className="explanation-stack">
+                        {followUpPrompt ? (
+                          <div>
+                            <strong>Try this next</strong>
+                            <p>{followUpPrompt}</p>
+                          </div>
+                        ) : null}
                         <div>
                           <strong>Why it works</strong>
                           <p>{currentChallenge.explanation}</p>
@@ -1633,12 +2314,6 @@ const App = () => {
                           <strong>How it shows up on the job</strong>
                           <p>{currentChallenge.analystUseCase}</p>
                         </div>
-                        {currentChallenge.followUp ? (
-                          <div>
-                            <strong>Follow-up</strong>
-                            <p>{currentChallenge.followUp}</p>
-                          </div>
-                        ) : null}
                       </div>
                     </div>
                   </div>
