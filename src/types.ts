@@ -73,4 +73,9 @@ export interface ProgressState {
   incorrectIds: string[]
   bestInterviewScore: number
   lastActiveDate: string | null
+  lastView: string | null
+  selectedChallengeId: string | null
+  editorDrafts: Record<string, string>
+  hintSteps: Record<string, number>
+  queryHistory: Record<string, string[]>
 }

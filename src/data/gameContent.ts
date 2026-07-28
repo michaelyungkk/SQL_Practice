@@ -380,16 +380,16 @@ const learnTracks: Record<Track, Challenge[]> = {
       title: 'Only High-Volume Event Types',
       difficulty: 'Intermediate',
       roleFocus: 'Junior Analyst',
-      businessContext: 'Product analytics only wants event types with at least 40 events.',
+      businessContext: 'Product analytics only wants event types with at least 160 events.',
       concept: 'HAVING',
-      task: 'Return `event_name` and event count for event types that appear at least 40 times.',
+      task: 'Return `event_name` and event count for event types that appear at least 160 times.',
       relevantTables: ['web_events'],
-      starterSql: starter('SELECT event_name,\n       COUNT(*) AS event_count\nFROM web_events\nGROUP BY event_name\nHAVING COUNT(*) >= 40\nORDER BY event_count DESC;'),
-      solutionSql: `SELECT event_name, COUNT(*) AS event_count FROM web_events GROUP BY event_name HAVING COUNT(*) >= 40 ORDER BY event_count DESC;`,
+      starterSql: starter('SELECT event_name,\n       COUNT(*) AS event_count\nFROM web_events\nGROUP BY event_name\nHAVING COUNT(*) >= 160\nORDER BY event_count DESC;'),
+      solutionSql: `SELECT event_name, COUNT(*) AS event_count FROM web_events GROUP BY event_name HAVING COUNT(*) >= 160 ORDER BY event_count DESC;`,
       expectedColumns: ['event_name', 'event_count'],
-      hints: ['Filter grouped results with `HAVING`.', 'Count events by `event_name` first.', 'Use `COUNT(*) >= 40`.'],
+      hints: ['Filter grouped results with `HAVING`.', 'Count events by `event_name` first.', 'Use `COUNT(*) >= 160`.'],
       explanation: '`HAVING` filters after aggregation, which is why it is used instead of `WHERE` here.',
-      commonMistake: 'Using `WHERE COUNT(*) >= 40` fails because `WHERE` runs before grouping.',
+      commonMistake: 'Using `WHERE COUNT(*) >= 160` fails because `WHERE` runs before grouping.',
       analystUseCase: 'Grouped filters are standard for threshold-based reporting.',
       xpReward: 75,
     }),
@@ -911,12 +911,14 @@ ORDER BY linked_orders DESC;`, ['campaign_name', 'linked_orders'], 'Campaign att
 FROM orders AS o
 JOIN payments AS p ON o.order_id = p.order_id
 WHERE p.payment_status = 'paid';`, ['average_order_value'], 'Commerce KPI'],
-  ['career-06', 'Find repeat customers with at least 3 orders.', 'customers, orders', `SELECT c.customer_name, COUNT(*) AS order_count
+  ['career-06', 'Find customers with at least 3 paid orders.', 'customers, orders, payments', `SELECT c.customer_name, COUNT(*) AS paid_order_count
 FROM customers AS c
 JOIN orders AS o ON c.customer_id = o.customer_id
+JOIN payments AS p ON o.order_id = p.order_id
+WHERE p.payment_status = 'paid'
 GROUP BY c.customer_name
 HAVING COUNT(*) >= 3
-ORDER BY order_count DESC, c.customer_name;`, ['customer_name', 'order_count'], 'Repeat purchase'],
+ORDER BY paid_order_count DESC, c.customer_name;`, ['customer_name', 'paid_order_count'], 'Repeat purchase'],
   ['career-07', 'Build a sales leaderboard by product.', 'order_items, products', `SELECT p.product_name, ROUND(SUM(oi.quantity * oi.unit_price * (1 - oi.discount_pct)), 2) AS revenue
 FROM order_items AS oi
 JOIN products AS p ON oi.product_id = p.product_id
@@ -1078,9 +1080,9 @@ const interviewQuestions: Challenge[] = Array.from({ length: 20 }, (_, index) =>
     },
     {
       title: 'Interview Sprint: Repeat Buyers',
-      task: 'Return customers with at least 2 orders.',
-      solutionSql: `SELECT c.customer_name, COUNT(*) AS order_count FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id GROUP BY c.customer_name HAVING COUNT(*) >= 2 ORDER BY order_count DESC, c.customer_name;`,
-      expectedColumns: ['customer_name', 'order_count'],
+      task: 'Return customers with at least 2 paid orders.',
+      solutionSql: `SELECT c.customer_name, COUNT(*) AS paid_order_count FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' GROUP BY c.customer_name HAVING COUNT(*) >= 2 ORDER BY paid_order_count DESC, c.customer_name;`,
+      expectedColumns: ['customer_name', 'paid_order_count'],
       concept: 'HAVING',
     },
     {
@@ -1139,9 +1141,9 @@ const debugChallenges: Challenge[] = [
   {
     id: 'debug-03',
     title: 'Fix the Grouped Filter',
-    task: 'Fix the query so it only returns event types with at least 40 rows.',
-    brokenSql: 'SELECT event_name, COUNT(*) AS event_count FROM web_events WHERE COUNT(*) >= 40 GROUP BY event_name;',
-    solutionSql: 'SELECT event_name, COUNT(*) AS event_count FROM web_events GROUP BY event_name HAVING COUNT(*) >= 40;',
+    task: 'Fix the query so it only returns event types with at least 160 rows.',
+    brokenSql: 'SELECT event_name, COUNT(*) AS event_count FROM web_events WHERE COUNT(*) >= 160 GROUP BY event_name;',
+    solutionSql: 'SELECT event_name, COUNT(*) AS event_count FROM web_events GROUP BY event_name HAVING COUNT(*) >= 160;',
     expectedColumns: ['event_name', 'event_count'],
     concept: 'HAVING',
   },

@@ -33,7 +33,7 @@ import { getDatabaseSnapshot, runSql } from './lib/database'
 import { compareResults, syntaxFeedback } from './lib/validation'
 import type { Challenge, ProgressState, QueryResult, ValidationFeedback } from './types'
 
-type View = 'dashboard' | 'learn' | 'practice' | 'career' | 'interview' | 'debug' | 'review' | 'schema'
+type View = 'dashboard' | 'learn' | 'practice' | 'career' | 'interview' | 'debug' | 'review' | 'schema' | 'syntax'
 
 const progressStorageKey = 'sql-practice-game-progress-v1'
 const progressApiPath = '/api/progress'
@@ -46,6 +46,11 @@ const initialProgress: ProgressState = {
   incorrectIds: [],
   bestInterviewScore: 0,
   lastActiveDate: null,
+  lastView: null,
+  selectedChallengeId: null,
+  editorDrafts: {},
+  hintSteps: {},
+  queryHistory: {},
 }
 
 const rankSteps = [
@@ -73,9 +78,281 @@ const viewMeta: Record<View, { label: string; icon: typeof LayoutDashboard }> = 
   debug: { label: 'Debug Mode', icon: Bug },
   review: { label: 'Review Mode', icon: ShieldCheck },
   schema: { label: 'Schema', icon: Database },
+  syntax: { label: 'Syntax Guide', icon: BookOpen },
 }
 
+const syntaxReference = [
+  {
+    title: 'Select Rows',
+    summary: 'Use `SELECT` and `FROM` to choose columns from one table.',
+    syntax: `SELECT customer_name, country
+FROM customers;`,
+    note: 'Start here when you only need raw fields without filtering or grouping.',
+  },
+  {
+    title: 'Select All Columns',
+    summary: 'Use `SELECT *` when you need to inspect a table quickly.',
+    syntax: `SELECT *
+FROM customers;`,
+    note: 'Useful for exploration, but in reporting queries it is usually better to list only the columns you need.',
+  },
+  {
+    title: 'Choose Specific Columns',
+    summary: 'List only the columns needed for the answer.',
+    syntax: `SELECT product_name, price
+FROM products;`,
+    note: 'Treat the `SELECT` list as the shape of the final result.',
+  },
+  {
+    title: 'Filter Rows',
+    summary: 'Use `WHERE` to keep only rows that match a condition.',
+    syntax: `SELECT product_name, price
+FROM products
+WHERE price > 120;`,
+    note: 'Use single quotes for text values and leave numbers unquoted.',
+  },
+  {
+    title: 'Combine Conditions',
+    summary: 'Use `AND`, `OR`, and `NOT` to express multiple business rules.',
+    syntax: `SELECT order_id, status, device_type
+FROM orders
+WHERE status = 'completed'
+  AND device_type = 'Mobile';`,
+    note: 'Add parentheses when mixing `AND` and `OR` so the intended logic is explicit.',
+  },
+  {
+    title: 'Distinct Values',
+    summary: 'Use `DISTINCT` to remove duplicate values from the selected output.',
+    syntax: `SELECT DISTINCT acquisition_channel
+FROM customers;`,
+    note: '`DISTINCT` applies to the full selected row, not just one column in isolation.',
+  },
+  {
+    title: 'Null Checks',
+    summary: 'Use `IS NULL` and `IS NOT NULL` for missing values.',
+    syntax: `SELECT order_id, campaign_id
+FROM orders
+WHERE campaign_id IS NULL;`,
+    note: 'Do not write `= NULL` or `<> NULL`.',
+  },
+  {
+    title: 'Pattern Matching',
+    summary: 'Use `LIKE` with `%` wildcards to search partial text.',
+    syntax: `SELECT *
+FROM campaigns
+WHERE campaign_name LIKE '%Brand%';`,
+    note: '`%` matches any sequence of characters. Put the pattern in quotes.',
+  },
+  {
+    title: 'Sort And Limit',
+    summary: 'Use `ORDER BY` to control row order and `LIMIT` to keep only the top results.',
+    syntax: `SELECT product_name, price
+FROM products
+ORDER BY price DESC
+LIMIT 5;`,
+    note: 'Sort first, then limit. Otherwise the top-N result is wrong.',
+  },
+  {
+    title: 'Alias Columns',
+    summary: 'Use `AS` to rename columns in the result.',
+    syntax: `SELECT campaign_name AS campaign,
+       channel AS marketing_channel,
+       spend AS ad_spend
+FROM campaigns;`,
+    note: 'Aliases make output easier for people and dashboards to read.',
+  },
+  {
+    title: 'Group And Aggregate',
+    summary: 'Use aggregates like `COUNT`, `SUM`, and `AVG` after defining the row grain.',
+    syntax: `SELECT segment, COUNT(*) AS customer_count
+FROM customers
+GROUP BY segment;`,
+    note: 'Every selected non-aggregate column must also appear in `GROUP BY`.',
+  },
+  {
+    title: 'Count Rows',
+    summary: 'Use `COUNT(*)` to count rows in a table or group.',
+    syntax: `SELECT COUNT(*) AS total_orders
+FROM orders;`,
+    note: 'This is the simplest aggregate metric and a good first check when validating dataset size.',
+  },
+  {
+    title: 'Count Distinct',
+    summary: 'Use `COUNT(DISTINCT ...)` when duplicates would overcount the business entity.',
+    syntax: `SELECT COUNT(DISTINCT order_id) AS distinct_orders
+FROM order_items;`,
+    note: 'This is common when one order can appear in multiple line-item rows.',
+  },
+  {
+    title: 'Sum Values',
+    summary: 'Use `SUM(...)` to add values together.',
+    syntax: `SELECT SUM(amount) AS paid_revenue
+FROM payments
+WHERE payment_status = 'paid';`,
+    note: 'Filter first, then aggregate, so the metric matches the business definition.',
+  },
+  {
+    title: 'Average Values',
+    summary: 'Use `AVG(...)` to calculate a mean.',
+    syntax: `SELECT AVG(price) AS avg_price
+FROM products;`,
+    note: 'Give the result an alias so the output column is readable.',
+  },
+  {
+    title: 'Min And Max',
+    summary: 'Use `MIN(...)` and `MAX(...)` together to compare extremes.',
+    syntax: `SELECT MIN(price) AS min_price,
+       MAX(price) AS max_price
+FROM products;`,
+    note: 'Multiple aggregate expressions can be returned in one summary row.',
+  },
+  {
+    title: 'Filter Groups',
+    summary: 'Use `HAVING` when the condition depends on an aggregate result.',
+    syntax: `SELECT event_name, COUNT(*) AS event_count
+FROM web_events
+GROUP BY event_name
+HAVING COUNT(*) >= 160;`,
+    note: '`WHERE` filters rows before grouping. `HAVING` filters after grouping.',
+  },
+  {
+    title: 'Inner Join',
+    summary: 'Use `INNER JOIN ... ON ...` to keep rows that match in both tables.',
+    syntax: `SELECT o.order_id, c.customer_name
+FROM orders AS o
+INNER JOIN customers AS c
+  ON o.customer_id = c.customer_id;`,
+    note: 'Always confirm which key links the two tables before you join.',
+  },
+  {
+    title: 'Left Join',
+    summary: 'Use `LEFT JOIN` when every row from the left table should stay in the result.',
+    syntax: `SELECT o.order_id, c.campaign_name
+FROM orders AS o
+LEFT JOIN campaigns AS c
+  ON o.campaign_id = c.campaign_id;`,
+    note: 'Unmatched right-side columns come back as `NULL`.',
+  },
+  {
+    title: 'Left Join With Null Filter',
+    summary: 'Use a left join plus a null check to find missing relationships.',
+    syntax: `SELECT c.customer_id, c.customer_name
+FROM customers AS c
+LEFT JOIN orders AS o
+  ON c.customer_id = o.customer_id
+WHERE o.order_id IS NULL;`,
+    note: 'This is a common anti-join pattern for “who has no related record?” questions.',
+  },
+  {
+    title: 'Case Logic',
+    summary: 'Use `CASE WHEN` to create buckets, segments, or labels.',
+    syntax: `SELECT product_name,
+       price,
+       CASE
+         WHEN price < 50 THEN 'Entry'
+         WHEN price < 120 THEN 'Core'
+         ELSE 'Premium'
+       END AS price_band
+FROM products;`,
+    note: 'Conditions run top to bottom, so the order of `WHEN` clauses matters.',
+  },
+  {
+    title: 'Date Functions',
+    summary: 'Use SQLite date helpers like `strftime` to group or filter by calendar periods.',
+    syntax: `SELECT strftime('%Y-%m', payment_date) AS revenue_month,
+       SUM(amount) AS revenue
+FROM payments
+WHERE payment_status = 'paid'
+GROUP BY strftime('%Y-%m', payment_date);`,
+    note: '`strftime` is useful for monthly cohorts, trends, and reporting periods.',
+  },
+  {
+    title: 'Data Cleaning',
+    summary: 'Use functions like `LOWER` and `TRIM` to normalize text before analysis.',
+    syntax: `SELECT DISTINCT LOWER(TRIM(acquisition_channel)) AS clean_channel
+FROM customers
+ORDER BY clean_channel;`,
+    note: 'Light cleanup in SQL helps avoid duplicate-looking categories caused by formatting differences.',
+  },
+  {
+    title: 'Subquery In WHERE',
+    summary: 'Use a subquery when one query needs a comparison value from another query.',
+    syntax: `SELECT payment_id, amount
+FROM payments
+WHERE amount > (
+  SELECT AVG(amount)
+  FROM payments
+);`,
+    note: 'The inner query runs first and supplies a value used by the outer filter.',
+  },
+  {
+    title: 'Common Table Expressions',
+    summary: 'Use `WITH` to name an intermediate query before selecting from it.',
+    syntax: `WITH monthly_revenue AS (
+  SELECT strftime('%Y-%m', payment_date) AS order_month,
+         SUM(amount) AS revenue
+  FROM payments
+  WHERE payment_status = 'paid'
+  GROUP BY strftime('%Y-%m', payment_date)
+)
+SELECT order_month, revenue
+FROM monthly_revenue;`,
+    note: 'CTEs make long queries easier to read and debug.',
+  },
+  {
+    title: 'Row Number Ranking',
+    summary: 'Use `ROW_NUMBER()` to assign a strict position after sorting.',
+    syntax: `SELECT customer_name,
+       total_spend,
+       ROW_NUMBER() OVER (ORDER BY total_spend DESC) AS spend_rank
+FROM customer_spend;`,
+    note: 'This is useful when you need a unique 1, 2, 3 ranking even when values tie.',
+  },
+  {
+    title: 'Rank And Dense Rank',
+    summary: 'Use `RANK()` and `DENSE_RANK()` when ties matter.',
+    syntax: `SELECT product_name,
+       price,
+       RANK() OVER (ORDER BY price DESC) AS price_rank,
+       DENSE_RANK() OVER (ORDER BY price DESC) AS dense_price_rank
+FROM products;`,
+    note: '`RANK()` leaves gaps after ties. `DENSE_RANK()` does not.',
+  },
+  {
+    title: 'Lag And Lead',
+    summary: 'Use `LAG()` and `LEAD()` to compare one row to the previous or next row.',
+    syntax: `SELECT customer_id,
+       payment_date,
+       amount,
+       LAG(amount) OVER (PARTITION BY customer_id ORDER BY payment_date) AS previous_amount
+FROM paid_orders;`,
+    note: 'These functions are common in change-over-time and sequence analysis.',
+  },
+  {
+    title: 'Partitioned Window Aggregates',
+    summary: 'Use `PARTITION BY` to calculate metrics within each group while keeping row detail.',
+    syntax: `SELECT shipping_country,
+       amount,
+       SUM(amount) OVER (PARTITION BY shipping_country) AS country_revenue
+FROM paid_orders;`,
+    note: 'Window functions do not collapse rows the way `GROUP BY` does.',
+  },
+  {
+    title: 'Running Totals',
+    summary: 'Use an ordered windowed `SUM(...) OVER (...)` to accumulate results over time.',
+    syntax: `SELECT order_month,
+       revenue,
+       SUM(revenue) OVER (ORDER BY order_month) AS cumulative_revenue
+FROM monthly_revenue;`,
+    note: 'This pattern is common for revenue tracking and progress-to-date charts.',
+  },
+]
+
 const todayKey = () => new Date().toISOString().slice(0, 10)
+
+const isKnownView = (value: unknown): value is View => typeof value === 'string' && value in viewMeta
+
+const pushRecentValue = <T,>(existing: T[] | undefined, value: T, maxItems = 5) => [value, ...(existing ?? [])].slice(0, maxItems)
 
 const loadLocalProgress = (): ProgressState => {
   const raw = localStorage.getItem(progressStorageKey)
@@ -237,6 +514,14 @@ const renderTextWithInlineCode = (text: string): ReactNode[] =>
     return <Fragment key={`${part}-${index}`}>{part}</Fragment>
   })
 
+const getCasePatternPlaceholder = (challenge: Challenge) => {
+  if (challenge.id === 'intermediate-08') {
+    return "  product_name,\n  price,\n  CASE\n    WHEN price < cutoff_1 THEN 'Entry'\n    WHEN price < cutoff_2 THEN 'Core'\n    ELSE 'Premium'\n  END AS price_band"
+  }
+
+  return '  column_name,\n  CASE\n    WHEN condition_1 THEN result_1\n    WHEN condition_2 THEN result_2\n    ELSE fallback_result\n  END AS label_name'
+}
+
 const getBaseSelectPlaceholder = (challenge: Challenge) => {
   const sql = challenge.solutionSql.toUpperCase()
 
@@ -246,7 +531,7 @@ const getBaseSelectPlaceholder = (challenge: Challenge) => {
   if (sql.includes('MIN(') && sql.includes('MAX(')) return '  MIN(column_name) AS min_value,\n  MAX(column_name) AS max_value'
   if (sql.includes('MIN(')) return '  MIN(column_name) AS min_value'
   if (sql.includes('MAX(')) return '  MAX(column_name) AS max_value'
-  if (sql.includes('CASE')) return '  column_name,\n  CASE\n    WHEN condition_1 THEN result_1\n    ELSE fallback_result\n  END AS label_name'
+  if (sql.includes('CASE')) return getCasePatternPlaceholder(challenge)
   if (sql.includes('DISTINCT')) return '  DISTINCT column_name'
   if (sql.includes('OVER (')) return '  column_name,\n  window_value'
   if (sql.includes('GROUP BY')) return '  grouping_column,\n  metric_value'
@@ -296,11 +581,22 @@ const getLearnModePracticeSql = (challenge: Challenge) => {
     lines.push('  MIN(column_name) AS min_value,')
     lines.push('  MAX(column_name) AS max_value')
   } else if (sql.includes('CASE')) {
-    lines.push('  -- choose the columns you need,')
-    lines.push('  CASE')
-    lines.push('    WHEN -- condition_1 THEN -- result_1')
-    lines.push('    ELSE -- fallback_result')
-    lines.push('  END AS label_name')
+    if (challenge.id === 'intermediate-08') {
+      lines.push('  product_name,')
+      lines.push('  price,')
+      lines.push('  CASE')
+      lines.push("    WHEN price < -- entry cutoff THEN 'Entry'")
+      lines.push("    WHEN price < -- core cutoff THEN 'Core'")
+      lines.push("    ELSE 'Premium'")
+      lines.push('  END AS price_band')
+    } else {
+      lines.push('  -- choose the columns you need,')
+      lines.push('  CASE')
+      lines.push('    WHEN -- condition_1 THEN -- result_1')
+      lines.push('    WHEN -- condition_2 THEN -- result_2')
+      lines.push('    ELSE -- fallback_result')
+      lines.push('  END AS label_name')
+    }
   } else if (sql.includes('DISTINCT')) {
     lines.push('  DISTINCT -- unique column')
   } else if (sql.includes('OVER (')) {
@@ -338,10 +634,14 @@ const getLearnModePracticeSql = (challenge: Challenge) => {
 
 const getEditorSeedSql = (challenge: Challenge, view: View) => {
   if (view === 'learn') {
-    return getLearnModePracticeSql(challenge)
+    return getLearnModePatternSql(challenge)
   }
 
-  return challenge.brokenSql ?? challenge.starterSql
+  if (challenge.mode === 'debug' && challenge.brokenSql) {
+    return challenge.brokenSql
+  }
+
+  return getLearnModePatternSql(challenge)
 }
 
 const learnChallenges = [
@@ -370,7 +670,10 @@ const App = () => {
   const [practiceSeed, setPracticeSeed] = useState(0)
   const [interviewSecondsLeft, setInterviewSecondsLeft] = useState<number | null>(null)
   const [taskMenuCollapsed, setTaskMenuCollapsed] = useState(false)
+  const [progressReady, setProgressReady] = useState(false)
   const hasLoadedProgress = useRef(false)
+  const draftStoreRef = useRef(progress.editorDrafts)
+  const hintStoreRef = useRef(progress.hintSteps)
 
   useEffect(() => {
     let cancelled = false
@@ -380,6 +683,7 @@ const App = () => {
       if (!cancelled) {
         setProgress(savedProgress)
         hasLoadedProgress.current = true
+        setProgressReady(true)
       }
     }
 
@@ -397,6 +701,58 @@ const App = () => {
 
     void saveProgress(progress)
   }, [progress])
+
+  useEffect(() => {
+    draftStoreRef.current = progress.editorDrafts
+  }, [progress.editorDrafts])
+
+  useEffect(() => {
+    hintStoreRef.current = progress.hintSteps
+  }, [progress.hintSteps])
+
+  useEffect(() => {
+    if (!progressReady) {
+      return
+    }
+
+    if (progress.lastView && isKnownView(progress.lastView) && progress.lastView !== view) {
+      setView(progress.lastView)
+    }
+
+    if (progress.selectedChallengeId && progress.selectedChallengeId !== selectedChallengeId) {
+      setSelectedChallengeId(progress.selectedChallengeId)
+    }
+  }, [progress.selectedChallengeId, progress.lastView, progressReady, selectedChallengeId, view])
+
+  useEffect(() => {
+    if (!progressReady) {
+      return
+    }
+
+    setProgress((current) =>
+      current.lastView === view
+        ? current
+        : {
+            ...current,
+            lastView: view,
+          },
+    )
+  }, [progressReady, view])
+
+  useEffect(() => {
+    if (!progressReady) {
+      return
+    }
+
+    setProgress((current) =>
+      current.selectedChallengeId === selectedChallengeId
+        ? current
+        : {
+            ...current,
+            selectedChallengeId,
+          },
+    )
+  }, [progressReady, selectedChallengeId])
 
   const reviewChallenges = useMemo(
     () => allChallenges.filter((challenge) => progress.incorrectIds.includes(challenge.id)),
@@ -463,8 +819,11 @@ const App = () => {
       return
     }
 
-    setEditorSql(getEditorSeedSql(currentChallenge, view))
-    setHintStep(0)
+    const savedDraft = progressReady ? draftStoreRef.current[currentChallenge.id] : undefined
+    const savedHintStep = progressReady ? hintStoreRef.current[currentChallenge.id] : undefined
+
+    setEditorSql(savedDraft ?? getEditorSeedSql(currentChallenge, view))
+    setHintStep(savedHintStep ?? 0)
     setFeedback({
       status: 'idle',
       title: currentChallenge.title,
@@ -477,7 +836,7 @@ const App = () => {
     } else {
       setInterviewSecondsLeft(null)
     }
-  }, [currentChallenge?.id, view])
+  }, [currentChallenge, progressReady, view])
 
   useEffect(() => {
     if (view !== 'interview' || interviewSecondsLeft === null || interviewSecondsLeft <= 0) {
@@ -518,6 +877,7 @@ const App = () => {
       const completed = allChallenges.filter((candidate) => completedIds.includes(candidate.id))
 
       return {
+        ...current,
         completedIds,
         xp,
         streak,
@@ -536,6 +896,16 @@ const App = () => {
 
     setIsRunning(true)
     try {
+      if (progressReady) {
+        setProgress((current) => ({
+          ...current,
+          queryHistory: {
+            ...(current.queryHistory ?? {}),
+            [currentChallenge.id]: pushRecentValue(current.queryHistory?.[currentChallenge.id], editorSql.trim()),
+          },
+        }))
+      }
+
       const userResult = await runSql(editorSql)
       setQueryResult(userResult)
 
@@ -557,6 +927,22 @@ const App = () => {
       event.preventDefault()
       void handleRun()
     }
+  }
+
+  const handleEditorChange = (value: string) => {
+    setEditorSql(value)
+
+    if (!currentChallenge || !progressReady) {
+      return
+    }
+
+    setProgress((current) => ({
+      ...current,
+      editorDrafts: {
+        ...(current.editorDrafts ?? {}),
+        [currentChallenge.id]: value,
+      },
+    }))
   }
 
   const selectChallenge = (challenge: Challenge) => {
@@ -904,6 +1290,50 @@ const App = () => {
               )}
             </div>
           </section>
+        ) : view === 'syntax' ? (
+          <section className="syntax-layout">
+            <div className="hero-panel">
+              <div>
+                <span className="eyebrow">Reference</span>
+                <h2>SQL syntax patterns you can check while learning.</h2>
+                <p>
+                  This guide keeps the core query shapes inside the app so you can review syntax quickly without leaving your lesson.
+                </p>
+              </div>
+              <div className="hero-grid">
+                <div className="metric-card">
+                  <span>Patterns</span>
+                  <strong>{syntaxReference.length}</strong>
+                  <small>common SQL building blocks</small>
+                </div>
+                <div className="metric-card">
+                  <span>Focus</span>
+                  <strong>SQLite</strong>
+                  <small>same syntax used by the lessons</small>
+                </div>
+                <div className="metric-card">
+                  <span>Best use</span>
+                  <strong>Quick lookup</strong>
+                  <small>read the shape, then return to practice</small>
+                </div>
+              </div>
+            </div>
+
+            <div className="syntax-grid">
+              {syntaxReference.map((entry) => (
+                <article key={entry.title} className="panel syntax-card">
+                  <div className="section-heading">
+                    <h3>{entry.title}</h3>
+                    <span>{entry.summary}</span>
+                  </div>
+                  <div className="example-code">
+                    <pre>{renderSqlTokens(entry.syntax)}</pre>
+                  </div>
+                  <p className="syntax-note">{renderTextWithInlineCode(entry.note)}</p>
+                </article>
+              ))}
+            </div>
+          </section>
         ) : (
           <section className={`workspace ${taskMenuCollapsed ? 'tasks-collapsed' : ''}`}>
             {!taskMenuCollapsed ? (
@@ -1098,12 +1528,20 @@ const App = () => {
                       </div>
                       <div className="toolbar-actions">
                         {view === 'learn' ? (
-                          <button type="button" className="secondary-button" onClick={() => setEditorSql(getLearnModePracticeSql(currentChallenge))}>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => handleEditorChange(getLearnModePracticeSql(currentChallenge))}
+                          >
                             <BookOpen size={16} />
                             <span>Load Scaffold</span>
                           </button>
                         ) : null}
-                        <button type="button" className="secondary-button" onClick={() => setEditorSql(getEditorSeedSql(currentChallenge, view))}>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
+                        >
                           <RefreshCw size={16} />
                           <span>Reset SQL</span>
                         </button>
@@ -1120,7 +1558,7 @@ const App = () => {
                     ) : null}
                     <textarea
                       value={editorSql}
-                      onChange={(event) => setEditorSql(event.target.value)}
+                      onChange={(event) => handleEditorChange(event.target.value)}
                       onKeyDown={handleEditorKeyDown}
                       spellCheck={false}
                     />
@@ -1159,7 +1597,24 @@ const App = () => {
                           </div>
                         ))}
                         {hintStep < currentChallenge.hints.length ? (
-                          <button type="button" className="secondary-button" onClick={() => setHintStep((step) => step + 1)}>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              const nextHintStep = hintStep + 1
+                              setHintStep(nextHintStep)
+
+                              if (currentChallenge && progressReady) {
+                                setProgress((current) => ({
+                                  ...current,
+                                  hintSteps: {
+                                    ...(current.hintSteps ?? {}),
+                                    [currentChallenge.id]: nextHintStep,
+                                  },
+                                }))
+                              }
+                            }}
+                          >
                             Reveal hint {hintStep + 1}
                           </button>
                         ) : null}
