@@ -105,6 +105,42 @@ const keywordHints = (sql: string, challenge: Challenge) => {
   return extraHints
 }
 
+const requiredConstructHints = (sql: string, challenge: Challenge) => {
+  const upperSql = sql.toUpperCase()
+  const solutionSql = challenge.solutionSql.toUpperCase()
+  const missing: string[] = []
+
+  const checks: Array<{ pattern: RegExp; label: string; requiredWhen?: (solution: string) => boolean }> = [
+    { pattern: /\bJOIN\b/, label: 'a JOIN clause' },
+    { pattern: /\bGROUP BY\b/, label: 'GROUP BY', requiredWhen: (solution) => solution.includes('GROUP BY') },
+    { pattern: /\bHAVING\b/, label: 'HAVING', requiredWhen: (solution) => solution.includes('HAVING') },
+    { pattern: /\bDISTINCT\b/, label: 'DISTINCT', requiredWhen: (solution) => solution.includes('DISTINCT') },
+    { pattern: /\bCASE\b/, label: 'CASE', requiredWhen: (solution) => solution.includes('CASE') },
+    { pattern: /\bOVER\s*\(/, label: 'a window function', requiredWhen: (solution) => solution.includes('OVER (') },
+    { pattern: /\bUNION\b/, label: 'UNION', requiredWhen: (solution) => solution.includes('UNION') },
+    { pattern: /\bEXISTS\b/, label: 'EXISTS', requiredWhen: (solution) => solution.includes('EXISTS') },
+    { pattern: /\bBETWEEN\b/, label: 'BETWEEN', requiredWhen: (solution) => solution.includes('BETWEEN') },
+    { pattern: /\bIN\b/, label: 'IN', requiredWhen: (solution) => solution.includes(' IN ') },
+    { pattern: /\bLIMIT\b/, label: 'LIMIT', requiredWhen: (solution) => solution.includes('LIMIT') },
+  ]
+
+  checks.forEach(({ pattern, label, requiredWhen }) => {
+    if (requiredWhen && !requiredWhen(solutionSql)) {
+      return
+    }
+
+    if (pattern.test(solutionSql) && !pattern.test(upperSql)) {
+      missing.push(label)
+    }
+  })
+
+  if (isOrderedChallenge(challenge) && solutionSql.includes('ORDER BY') && !upperSql.includes('ORDER BY')) {
+    missing.push('ORDER BY')
+  }
+
+  return missing
+}
+
 const compareSortedRows = (leftRows: QueryResult['rows'], rightRows: QueryResult['rows']) => {
   const left = leftRows.map((row) => JSON.stringify(row)).sort((a, b) => a.localeCompare(b))
   const right = rightRows.map((row) => JSON.stringify(row)).sort((a, b) => a.localeCompare(b))
@@ -118,6 +154,16 @@ export const compareResults = (
   userResult: QueryResult,
   expectedResult: QueryResult,
 ): ValidationFeedback => {
+  const requiredConstructs = requiredConstructHints(userSql, challenge)
+  if (requiredConstructs.length > 0) {
+    return {
+      status: 'error',
+      title: 'Missing required SQL pattern',
+      message: 'The query returned data, but it skipped a concept this lesson is meant to teach.',
+      detail: `Add ${requiredConstructs.slice(0, 3).join(', ')} and try again.`,
+    }
+  }
+
   const normalizedExpectedColumns = normalizeColumns(expectedResult.columns)
   const normalizedUserColumns = normalizeColumns(userResult.columns)
   const columnCountMatches = normalizedUserColumns.length === normalizedExpectedColumns.length

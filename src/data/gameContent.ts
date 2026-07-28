@@ -1055,53 +1055,156 @@ const careerMissions: Challenge[] = careerMissionSeeds.map(([id, task, tables, s
   }),
 )
 
-const interviewQuestions: Challenge[] = Array.from({ length: 20 }, (_, index) => {
-  const prompts = [
-    {
-      title: 'Interview Sprint: Monthly Revenue',
-      task: 'Return monthly paid revenue sorted by month.',
-      solutionSql: `SELECT strftime('%Y-%m', payment_date) AS revenue_month, ROUND(SUM(amount), 2) AS revenue FROM payments WHERE payment_status = 'paid' GROUP BY strftime('%Y-%m', payment_date) ORDER BY revenue_month;`,
-      expectedColumns: ['revenue_month', 'revenue'],
-      concept: 'Aggregation',
-    },
-    {
-      title: 'Interview Sprint: Top Category',
-      task: 'Return the top 3 categories by line revenue.',
-      solutionSql: `SELECT c.category_name, ROUND(SUM(oi.quantity * oi.unit_price * (1 - oi.discount_pct)), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN categories AS c ON p.category_id = c.category_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 3;`,
-      expectedColumns: ['category_name', 'revenue'],
-      concept: 'Joins and aggregation',
-    },
-    {
-      title: 'Interview Sprint: Customers Without Orders',
-      task: 'Return customers who have never placed an order.',
-      solutionSql: `SELECT c.customer_id, c.customer_name FROM customers AS c LEFT JOIN orders AS o ON c.customer_id = o.customer_id WHERE o.order_id IS NULL;`,
-      expectedColumns: ['customer_id', 'customer_name'],
-      concept: 'Anti-join pattern',
-    },
-    {
-      title: 'Interview Sprint: Repeat Buyers',
-      task: 'Return customers with at least 2 paid orders.',
-      solutionSql: `SELECT c.customer_name, COUNT(*) AS paid_order_count FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' GROUP BY c.customer_name HAVING COUNT(*) >= 2 ORDER BY paid_order_count DESC, c.customer_name;`,
-      expectedColumns: ['customer_name', 'paid_order_count'],
-      concept: 'HAVING',
-    },
-    {
-      title: 'Interview Sprint: Recent At-Risk Users',
-      task: 'Return 10 at-risk customers ordered by most recent activity.',
-      solutionSql: `SELECT customer_name, last_active_date FROM customers WHERE segment = 'At Risk' ORDER BY last_active_date DESC LIMIT 10;`,
-      expectedColumns: ['customer_name', 'last_active_date'],
-      concept: 'Filtering and ranking',
-    },
-  ]
+const interviewPromptBank = [
+  {
+    title: 'Interview Sprint: Monthly Revenue',
+    task: 'Return monthly paid revenue sorted by month.',
+    solutionSql: `SELECT strftime('%Y-%m', payment_date) AS revenue_month, ROUND(SUM(amount), 2) AS revenue FROM payments WHERE payment_status = 'paid' GROUP BY strftime('%Y-%m', payment_date) ORDER BY revenue_month;`,
+    expectedColumns: ['revenue_month', 'revenue'],
+    concept: 'Aggregation',
+  },
+  {
+    title: 'Interview Sprint: Top Category',
+    task: 'Return the top 3 categories by line revenue.',
+    solutionSql: `SELECT c.category_name, ROUND(SUM(oi.quantity * oi.unit_price * (1 - oi.discount_pct)), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id JOIN categories AS c ON p.category_id = c.category_id GROUP BY c.category_name ORDER BY revenue DESC LIMIT 3;`,
+    expectedColumns: ['category_name', 'revenue'],
+    concept: 'Joins and aggregation',
+  },
+  {
+    title: 'Interview Sprint: Customers Without Orders',
+    task: 'Return customers who have never placed an order.',
+    solutionSql: `SELECT c.customer_id, c.customer_name FROM customers AS c LEFT JOIN orders AS o ON c.customer_id = o.customer_id WHERE o.order_id IS NULL;`,
+    expectedColumns: ['customer_id', 'customer_name'],
+    concept: 'Anti-join pattern',
+  },
+  {
+    title: 'Interview Sprint: Repeat Buyers',
+    task: 'Return customers with at least 2 paid orders.',
+    solutionSql: `SELECT c.customer_name, COUNT(*) AS paid_order_count FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' GROUP BY c.customer_name HAVING COUNT(*) >= 2 ORDER BY paid_order_count DESC, c.customer_name;`,
+    expectedColumns: ['customer_name', 'paid_order_count'],
+    concept: 'HAVING',
+  },
+  {
+    title: 'Interview Sprint: Recent At-Risk Users',
+    task: 'Return 10 at-risk customers ordered by most recent activity.',
+    solutionSql: `SELECT customer_name, last_active_date FROM customers WHERE segment = 'At Risk' ORDER BY last_active_date DESC LIMIT 10;`,
+    expectedColumns: ['customer_name', 'last_active_date'],
+    concept: 'Filtering and ranking',
+  },
+  {
+    title: 'Interview Sprint: Paid Revenue by Country',
+    task: 'Return paid revenue by shipping country.',
+    solutionSql: `SELECT o.shipping_country, ROUND(SUM(p.amount), 2) AS paid_revenue FROM orders AS o JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' GROUP BY o.shipping_country ORDER BY paid_revenue DESC;`,
+    expectedColumns: ['shipping_country', 'paid_revenue'],
+    concept: 'Joins and grouping',
+  },
+  {
+    title: 'Interview Sprint: High-Value Campaigns',
+    task: 'Return campaigns with at least 1000 in paid revenue.',
+    solutionSql: `SELECT c.campaign_name, ROUND(SUM(p.amount), 2) AS paid_revenue FROM campaigns AS c JOIN orders AS o ON c.campaign_id = o.campaign_id JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' GROUP BY c.campaign_name HAVING SUM(p.amount) >= 1000 ORDER BY paid_revenue DESC;`,
+    expectedColumns: ['campaign_name', 'paid_revenue'],
+    concept: 'HAVING',
+  },
+  {
+    title: 'Interview Sprint: Orders by Device',
+    task: 'Return the number of orders by device type.',
+    solutionSql: `SELECT device_type, COUNT(*) AS order_count FROM orders GROUP BY device_type ORDER BY order_count DESC, device_type;`,
+    expectedColumns: ['device_type', 'order_count'],
+    concept: 'Grouping',
+  },
+  {
+    title: 'Interview Sprint: Product Price Bands',
+    task: 'Return product names with a price band label.',
+    solutionSql: `SELECT product_name, price, CASE WHEN price < 50 THEN 'Entry' WHEN price < 120 THEN 'Core' ELSE 'Premium' END AS price_band FROM products ORDER BY price DESC, product_name;`,
+    expectedColumns: ['product_name', 'price', 'price_band'],
+    concept: 'CASE logic',
+  },
+  {
+    title: 'Interview Sprint: High-Volume Event Types',
+    task: 'Return event types with at least 160 events.',
+    solutionSql: `SELECT event_name, COUNT(*) AS event_count FROM web_events GROUP BY event_name HAVING COUNT(*) >= 160 ORDER BY event_count DESC, event_name;`,
+    expectedColumns: ['event_name', 'event_count'],
+    concept: 'HAVING',
+  },
+  {
+    title: 'Interview Sprint: Paid Orders in 2026',
+    task: 'Return distinct customers who placed paid orders in 2026.',
+    solutionSql: `SELECT DISTINCT c.customer_name FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid' AND o.order_date >= '2026-01-01' ORDER BY c.customer_name;`,
+    expectedColumns: ['customer_name'],
+    concept: 'Distinct filtering',
+  },
+  {
+    title: 'Interview Sprint: Low Inventory',
+    task: 'Return products where stock is at or below the reorder point.',
+    solutionSql: `SELECT p.product_name, i.stock_on_hand, i.reorder_point FROM products AS p JOIN inventory AS i ON p.product_id = i.product_id WHERE i.stock_on_hand <= i.reorder_point ORDER BY i.stock_on_hand ASC, p.product_name;`,
+    expectedColumns: ['product_name', 'stock_on_hand', 'reorder_point'],
+    concept: 'Joins and thresholds',
+  },
+  {
+    title: 'Interview Sprint: Top Products by Units',
+    task: 'Return the 5 products with the highest total units sold.',
+    solutionSql: `SELECT p.product_name, SUM(oi.quantity) AS units_sold FROM order_items AS oi JOIN products AS p ON oi.product_id = p.product_id GROUP BY p.product_name ORDER BY units_sold DESC, p.product_name LIMIT 5;`,
+    expectedColumns: ['product_name', 'units_sold'],
+    concept: 'Aggregation',
+  },
+  {
+    title: 'Interview Sprint: Average Price by Department',
+    task: 'Return average product price by department.',
+    solutionSql: `SELECT c.department, ROUND(AVG(p.price), 2) AS avg_price FROM products AS p JOIN categories AS c ON p.category_id = c.category_id GROUP BY c.department ORDER BY avg_price DESC;`,
+    expectedColumns: ['department', 'avg_price'],
+    concept: 'Aggregation',
+  },
+  {
+    title: 'Interview Sprint: Customers with Web Events',
+    task: 'Return customers with at least 3 web events.',
+    solutionSql: `SELECT c.customer_name, COUNT(*) AS event_count FROM customers AS c JOIN web_events AS w ON c.customer_id = w.customer_id GROUP BY c.customer_name HAVING COUNT(*) >= 3 ORDER BY event_count DESC, c.customer_name;`,
+    expectedColumns: ['customer_name', 'event_count'],
+    concept: 'HAVING',
+  },
+  {
+    title: 'Interview Sprint: Orders by Channel',
+    task: 'Return order counts by acquisition channel.',
+    solutionSql: `SELECT c.acquisition_channel, COUNT(*) AS order_count FROM customers AS c JOIN orders AS o ON c.customer_id = o.customer_id GROUP BY c.acquisition_channel ORDER BY order_count DESC, c.acquisition_channel;`,
+    expectedColumns: ['acquisition_channel', 'order_count'],
+    concept: 'Joins and grouping',
+  },
+  {
+    title: 'Interview Sprint: Paid Revenue by Method',
+    task: 'Return paid revenue by payment method.',
+    solutionSql: `SELECT payment_method, ROUND(SUM(amount), 2) AS paid_revenue FROM payments WHERE payment_status = 'paid' GROUP BY payment_method ORDER BY paid_revenue DESC;`,
+    expectedColumns: ['payment_method', 'paid_revenue'],
+    concept: 'Aggregation',
+  },
+  {
+    title: 'Interview Sprint: Latest Paid Order per Customer',
+    task: 'Return the latest paid order for each customer.',
+    solutionSql: `SELECT customer_id, order_id, order_date FROM (SELECT o.customer_id, o.order_id, o.order_date, ROW_NUMBER() OVER (PARTITION BY o.customer_id ORDER BY o.order_date DESC, o.order_id DESC) AS rn FROM orders AS o JOIN payments AS p ON o.order_id = p.order_id WHERE p.payment_status = 'paid') WHERE rn = 1 ORDER BY customer_id;`,
+    expectedColumns: ['customer_id', 'order_id', 'order_date'],
+    concept: 'Window functions',
+  },
+  {
+    title: 'Interview Sprint: Running Revenue',
+    task: 'Return monthly paid revenue with a running total.',
+    solutionSql: `WITH monthly_revenue AS (SELECT strftime('%Y-%m', payment_date) AS order_month, ROUND(SUM(amount), 2) AS revenue FROM payments WHERE payment_status = 'paid' GROUP BY strftime('%Y-%m', payment_date)) SELECT order_month, revenue, ROUND(SUM(revenue) OVER (ORDER BY order_month), 2) AS cumulative_revenue FROM monthly_revenue ORDER BY order_month;`,
+    expectedColumns: ['order_month', 'revenue', 'cumulative_revenue'],
+    concept: 'Window functions',
+  },
+  {
+    title: 'Interview Sprint: Customers Without Paid Payments',
+    task: 'Return customers who have never had a paid payment.',
+    solutionSql: `SELECT DISTINCT c.customer_id, c.customer_name FROM customers AS c LEFT JOIN orders AS o ON c.customer_id = o.customer_id LEFT JOIN payments AS p ON o.order_id = p.order_id AND p.payment_status = 'paid' WHERE p.payment_id IS NULL ORDER BY c.customer_id, c.customer_name;`,
+    expectedColumns: ['customer_id', 'customer_name'],
+    concept: 'Anti-join pattern',
+  },
+] as const
 
-  const prompt = prompts[index % prompts.length]
-
-  return buildChallenge({
+const interviewQuestions: Challenge[] = interviewPromptBank.map((prompt, index) =>
+  buildChallenge({
     id: `interview-${String(index + 1).padStart(2, '0')}`,
     mode: 'interview',
     track: 'interview',
-    title: `${prompt.title} ${Math.floor(index / prompts.length) + 1}`,
-    difficulty: index < 10 ? 'Intermediate' : 'Advanced',
+    title: prompt.title,
+    difficulty: index < 8 ? 'Intermediate' : 'Advanced',
     roleFocus: 'Interview Candidate',
     businessContext: 'You are solving a timed SQL interview prompt. Accuracy matters first, then clarity and speed.',
     concept: prompt.concept,
@@ -1109,15 +1212,15 @@ const interviewQuestions: Challenge[] = Array.from({ length: 20 }, (_, index) =>
     relevantTables: ['customers', 'orders', 'order_items', 'products', 'categories', 'payments', 'campaigns', 'web_events', 'inventory'],
     starterSql: prompt.solutionSql,
     solutionSql: prompt.solutionSql,
-    expectedColumns: prompt.expectedColumns,
+    expectedColumns: [...prompt.expectedColumns],
     hints: ['Begin with the grain of the result you need.', 'Check whether the prompt is asking for row detail, grouped metrics, or both.', 'Make sure ordering and limits match the prompt exactly.'],
     explanation: 'Interview questions reward a clean mental model: define the metric, choose the right grain, then write the SQL.',
     commonMistake: 'Candidates often rush into syntax before confirming the correct grouping level.',
     analystUseCase: 'These prompts mirror analyst hiring loops where SQL fluency is screened directly.',
     timeLimitSec: 180 + (index % 4) * 60,
     xpReward: 90 + index * 2,
-  })
-})
+  }),
+)
 
 const debugChallenges: Challenge[] = [
   {

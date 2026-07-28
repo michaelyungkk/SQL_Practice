@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   Award,
@@ -35,6 +35,17 @@ import { compareResults, syntaxFeedback } from './lib/validation'
 import type { Challenge, ProgressState, QueryResult, ValidationFeedback } from './types'
 
 type View = 'dashboard' | 'learn' | 'practice' | 'career' | 'interview' | 'debug' | 'review' | 'schema' | 'syntax'
+
+type InterviewAttemptSummary = {
+  status: 'success' | 'failed' | 'expired'
+  score: number
+  accuracyScore: number
+  speedScore: number
+  disciplineScore: number
+  attempts: number
+  hintsUsed: number
+  timeLeft: number
+}
 
 const progressStorageKey = 'sql-practice-game-progress-v1'
 const progressApiPath = '/api/progress'
@@ -976,6 +987,34 @@ const advanceReviewScheduleEntry = (currentEntry: { stage: number; variantSeed: 
   }
 }
 
+const buildInterviewAttemptSummary = (
+  challenge: Challenge,
+  wasSuccessful: boolean,
+  timeLeft: number,
+  attempts: number,
+  hintsUsed: number,
+  expired = false,
+): InterviewAttemptSummary => {
+  const timeLimit = Math.max(1, challenge.timeLimitSec ?? 180)
+  const normalizedTime = Math.max(0, Math.min(1, timeLeft / timeLimit))
+  const accuracyScore = wasSuccessful ? 70 : 0
+  const speedScore = Math.round(normalizedTime * 20)
+  const disciplinePenalty = Math.min(10, Math.max(0, attempts - 1) * 2 + hintsUsed * 2)
+  const disciplineScore = Math.max(0, 10 - disciplinePenalty)
+  const score = Math.max(0, Math.min(100, accuracyScore + speedScore + disciplineScore))
+
+  return {
+    status: expired ? 'expired' : wasSuccessful ? 'success' : 'failed',
+    score,
+    accuracyScore,
+    speedScore,
+    disciplineScore,
+    attempts,
+    hintsUsed,
+    timeLeft,
+  }
+}
+
 const learnChallenges = [
   ...lessonsByTrack.beginner,
   ...lessonsByTrack.intermediate,
@@ -1007,6 +1046,8 @@ const App = () => {
   const [schemaOverview, setSchemaOverview] = useState<{ counts: Record<string, number>; samples: Record<string, QueryResult> } | null>(null)
   const [syntaxSearch, setSyntaxSearch] = useState('')
   const [queryExplanation, setQueryExplanation] = useState<string[] | null>(null)
+  const [interviewAttemptSummary, setInterviewAttemptSummary] = useState<InterviewAttemptSummary | null>(null)
+  const [interviewExpiredChallengeId, setInterviewExpiredChallengeId] = useState<string | null>(null)
   const hasLoadedProgress = useRef(false)
   const draftStoreRef = useRef(progress.editorDrafts)
   const hintStoreRef = useRef(progress.hintSteps)
@@ -1208,6 +1249,57 @@ const App = () => {
     () => (currentChallenge ? progress.queryHistory[currentChallenge.id]?.length ?? 0 : 0),
     [currentChallenge, progress.queryHistory],
   )
+  const conceptMastery = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { total: number; completed: number; firstTry: number; retries: number; hints: number }
+    >()
+
+    allChallenges.forEach((challenge) => {
+      const current = grouped.get(challenge.concept) ?? {
+        total: 0,
+        completed: 0,
+        firstTry: 0,
+        retries: 0,
+        hints: 0,
+      }
+
+      const attempts = progress.queryHistory[challenge.id]?.length ?? 0
+      const hints = progress.hintSteps[challenge.id] ?? 0
+      const completed = progress.completedIds.includes(challenge.id)
+
+      current.total += 1
+      current.hints += hints
+      current.retries += Math.max(0, attempts - 1)
+      if (completed) {
+        current.completed += 1
+        if (attempts <= 1) {
+          current.firstTry += 1
+        }
+      }
+
+      grouped.set(challenge.concept, current)
+    })
+
+    return [...grouped.entries()]
+      .map(([concept, stats]) => {
+        const completionRate = stats.completed / Math.max(1, stats.total)
+        const firstTryRate = stats.firstTry / Math.max(1, stats.completed)
+        const retryPenalty = Math.min(12, stats.retries * 2)
+        const hintPenalty = Math.min(12, stats.hints * 2)
+        const score = Math.max(
+          0,
+          Math.min(100, Math.round(completionRate * 55 + firstTryRate * 25 + 20 - retryPenalty - hintPenalty)),
+        )
+
+        return {
+          concept,
+          score,
+          ...stats,
+        }
+      })
+      .sort((left, right) => right.score - left.score || right.completed - left.completed || left.concept.localeCompare(right.concept))
+  }, [progress.completedIds, progress.hintSteps, progress.queryHistory])
   const filteredSyntaxReference = useMemo(() => {
     const term = syntaxSearch.trim().toLowerCase()
     if (!term) {
@@ -1220,6 +1312,7 @@ const App = () => {
   }, [syntaxSearch])
   const queryExplanationLines = queryExplanation ?? []
   const followUpPrompt = currentChallenge ? getFollowUpPrompt(currentChallenge) : null
+  const interviewIsExpired = view === 'interview' && interviewSecondsLeft !== null && interviewSecondsLeft <= 0
   const nextLearnChallenge = useMemo(
     () =>
       currentLearnChallengeIndex >= 0 && currentLearnChallengeIndex < learnChallenges.length - 1
@@ -1245,6 +1338,8 @@ const App = () => {
     })
     setQueryResult(null)
     setQueryExplanation(null)
+    setInterviewAttemptSummary(null)
+    setInterviewExpiredChallengeId(null)
 
     if (view === 'interview' && currentChallenge.timeLimitSec) {
       setInterviewSecondsLeft(currentChallenge.timeLimitSec)
@@ -1265,7 +1360,12 @@ const App = () => {
     return () => window.clearTimeout(timer)
   }, [interviewSecondsLeft, view])
 
-  const markChallengeResult = (challenge: Challenge, wasSuccessful: boolean, reviewSourceId?: string) => {
+  const markChallengeResult = useCallback((
+    challenge: Challenge,
+    wasSuccessful: boolean,
+    reviewSourceId?: string,
+    interviewScore?: number,
+  ) => {
     setProgress((current) => {
       const scheduleKey = reviewSourceId ?? challenge.id
       const currentScheduleEntry = current.reviewSchedule[scheduleKey]
@@ -1307,8 +1407,12 @@ const App = () => {
             : current.streak
 
       const bestInterviewScore =
-        challenge.mode === 'interview' && wasSuccessful
-          ? Math.max(current.bestInterviewScore, Math.max(0, Math.min(100, Math.round(((interviewSecondsLeft ?? 0) / (challenge.timeLimitSec ?? 1)) * 100))))
+        challenge.mode === 'interview'
+          ? Math.max(
+              current.bestInterviewScore,
+              interviewScore ??
+                Math.max(0, Math.min(100, Math.round(((interviewSecondsLeft ?? 0) / (challenge.timeLimitSec ?? 1)) * 100))),
+            )
           : current.bestInterviewScore
 
       const completed = allChallenges.filter((candidate) => completedIds.includes(candidate.id))
@@ -1325,10 +1429,58 @@ const App = () => {
         reviewSchedule,
       }
     })
-  }
+  }, [interviewSecondsLeft])
+
+  useEffect(() => {
+    if (view !== 'interview' || !currentChallenge || currentChallenge.mode !== 'interview') {
+      return
+    }
+
+    if (interviewSecondsLeft !== 0 || interviewExpiredChallengeId === currentChallenge.id) {
+      return
+    }
+
+    const summary = buildInterviewAttemptSummary(
+      currentChallenge,
+      false,
+      0,
+      currentAttemptCount + 1,
+      hintStep,
+      true,
+    )
+
+    setInterviewExpiredChallengeId(currentChallenge.id)
+    setInterviewAttemptSummary(summary)
+    setFeedback({
+      status: 'error',
+      title: 'Time expired',
+      message: 'The timer reached zero before you submitted a final query.',
+      detail: `Interview score: ${summary.score}/100. Try again with a cleaner plan and fewer hints.`,
+    })
+    markChallengeResult(currentChallenge, false, activeReviewSourceId ?? undefined, summary.score)
+  }, [
+    activeReviewSourceId,
+    currentChallenge,
+    currentAttemptCount,
+    hintStep,
+    interviewExpiredChallengeId,
+    interviewSecondsLeft,
+    markChallengeResult,
+    view,
+  ])
 
   const handleRun = async () => {
     if (!currentChallenge) {
+      return
+    }
+
+    if (view === 'interview' && interviewSecondsLeft !== null && interviewSecondsLeft <= 0) {
+      setFeedback({
+        status: 'error',
+        title: 'Time expired',
+        message: 'The timer reached zero, so this interview attempt is closed.',
+        detail: 'Open a new attempt and work faster on the next pass.',
+      })
       return
     }
 
@@ -1350,14 +1502,46 @@ const App = () => {
       const expectedResult = await runSql(currentChallenge.solutionSql)
       const validation = compareResults(currentChallenge, editorSql, userResult, expectedResult)
       setFeedback(validation)
-      markChallengeResult(currentChallenge, validation.status === 'success', activeReviewSourceId ?? undefined)
+      const interviewSummary =
+        view === 'interview'
+          ? buildInterviewAttemptSummary(
+              currentChallenge,
+              validation.status === 'success',
+              Math.max(0, interviewSecondsLeft ?? 0),
+              currentAttemptCount + 1,
+              hintStep,
+            )
+          : null
+
+      if (interviewSummary) {
+        setInterviewAttemptSummary(interviewSummary)
+      }
+
+      markChallengeResult(
+        currentChallenge,
+        validation.status === 'success',
+        activeReviewSourceId ?? undefined,
+        interviewSummary?.score,
+      )
 
       if (validation.status === 'error') {
         setHintStep((step) => Math.max(step, Math.min(currentChallenge.hints.length, currentAttemptCount + 1)))
       }
     } catch (error) {
       setFeedback(syntaxFeedback(error))
-      markChallengeResult(currentChallenge, false)
+      if (view === 'interview') {
+        const interviewSummary = buildInterviewAttemptSummary(
+          currentChallenge,
+          false,
+          Math.max(0, interviewSecondsLeft ?? 0),
+          currentAttemptCount + 1,
+          hintStep,
+        )
+        setInterviewAttemptSummary(interviewSummary)
+        markChallengeResult(currentChallenge, false, activeReviewSourceId ?? undefined, interviewSummary.score)
+      } else {
+        markChallengeResult(currentChallenge, false)
+      }
       setQueryResult(null)
     } finally {
       setIsRunning(false)
@@ -1823,6 +2007,29 @@ const App = () => {
 
               <section className="panel">
                 <div className="section-heading">
+                  <h3>Concept mastery</h3>
+                  <span>Strength across SQL patterns</span>
+                </div>
+                <div className="mastery-grid">
+                  {conceptMastery.slice(0, 6).map((entry) => (
+                    <article key={entry.concept} className="mastery-card">
+                      <div className="mastery-header">
+                        <strong>{entry.concept}</strong>
+                        <span>{entry.score}%</span>
+                      </div>
+                      <div className="progress-bar">
+                        <span style={{ width: `${entry.score}%` }} />
+                      </div>
+                      <small>
+                        {entry.completed}/{entry.total} complete · {entry.firstTry} first tries · {entry.retries} retries · {entry.hints} hints
+                      </small>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="section-heading">
                   <h3>Dataset Overview</h3>
                   <span>Business-ready schema</span>
                 </div>
@@ -2146,7 +2353,9 @@ const App = () => {
                             <h3>{currentChallenge.title}</h3>
                           </div>
                           {view === 'interview' && interviewSecondsLeft !== null ? (
-                            <div className="countdown">{interviewSecondsLeft}s</div>
+                            <div className={`countdown ${interviewIsExpired ? 'expired' : ''}`}>
+                              {interviewIsExpired ? 'Expired' : `${interviewSecondsLeft}s`}
+                            </div>
                           ) : null}
                         </div>
                         <p className="context">{currentChallenge.businessContext}</p>
@@ -2199,11 +2408,11 @@ const App = () => {
                           onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
                         >
                           <RefreshCw size={16} />
-                          <span>Reset SQL</span>
-                        </button>
-                        <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning}>
+                            <span>Reset SQL</span>
+                          </button>
+                        <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || interviewIsExpired}>
                           <Play size={16} />
-                          <span>{isRunning ? 'Running…' : 'Run Query'}</span>
+                          <span>{isRunning ? 'Running…' : interviewIsExpired ? 'Time Expired' : 'Run Query'}</span>
                         </button>
                       </div>
                     </div>
@@ -2211,12 +2420,17 @@ const App = () => {
                       <p className="editor-intro">
                         Start from the example pattern above, then write the query that solves this lesson’s task.
                       </p>
+                    ) : view === 'interview' ? (
+                      <p className="editor-intro">
+                        Work from memory first. The timer is enforced, and the score reflects correctness, speed, and how many hints you needed.
+                      </p>
                     ) : null}
                     <textarea
                       value={editorSql}
                       onChange={(event) => handleEditorChange(event.target.value)}
                       onKeyDown={handleEditorKeyDown}
                       spellCheck={false}
+                      disabled={interviewIsExpired}
                     />
                   </div>
 
@@ -2256,6 +2470,43 @@ const App = () => {
                               <li key={`${index}-${line}`}>{line}</li>
                             ))}
                           </ol>
+                        </div>
+                      ) : null}
+                      {interviewAttemptSummary ? (
+                        <div className="interview-summary-card">
+                          <div className="section-heading">
+                            <h4>Attempt summary</h4>
+                            <span>Rubric-based interview scoring</span>
+                          </div>
+                          <div className="interview-score">
+                            <strong>{interviewAttemptSummary.score}</strong>
+                            <span>/ 100</span>
+                          </div>
+                          <div className="interview-rubric">
+                            <div>
+                              <span>Accuracy</span>
+                              <strong>{interviewAttemptSummary.accuracyScore}</strong>
+                            </div>
+                            <div>
+                              <span>Speed</span>
+                              <strong>{interviewAttemptSummary.speedScore}</strong>
+                            </div>
+                            <div>
+                              <span>Discipline</span>
+                              <strong>{interviewAttemptSummary.disciplineScore}</strong>
+                            </div>
+                            <div>
+                              <span>Attempts</span>
+                              <strong>{interviewAttemptSummary.attempts}</strong>
+                            </div>
+                          </div>
+                          <small>
+                            {interviewAttemptSummary.status === 'expired'
+                              ? 'The timer expired before submission.'
+                              : interviewAttemptSummary.status === 'success'
+                                ? 'The query was correct within the time limit.'
+                                : 'The query ran but did not match the expected answer.'}
+                          </small>
                         </div>
                       ) : null}
                       {view === 'learn' && feedback.status === 'success' ? (

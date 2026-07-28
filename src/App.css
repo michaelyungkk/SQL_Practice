@@ -311,6 +311,40 @@ select {
   border: 1px solid rgba(148, 163, 184, 0.22);
 }
 
+.mastery-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.mastery-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(248, 251, 255, 0.95), rgba(241, 246, 252, 0.95));
+  border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.mastery-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.mastery-header strong {
+  color: #0f172a;
+}
+
+.mastery-header span {
+  color: #0369a1;
+  font-weight: 700;
+}
+
+.mastery-card small {
+  color: #64748b;
+}
+
 .schema-preview-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -627,6 +661,12 @@ select {
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(124, 58, 237, 0.08);
+  color: #4338ca;
+}
+
+.countdown.expired {
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
 }
 
 .editor-panel textarea {
@@ -639,6 +679,12 @@ select {
   color: #0f172a;
   padding: 16px;
   font: 0.96rem/1.55 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+}
+
+.editor-panel textarea:disabled {
+  background: #eef2f7;
+  color: #64748b;
+  cursor: not-allowed;
 }
 
 .editor-intro {
@@ -695,6 +741,54 @@ select {
   color: #334155;
   display: grid;
   gap: 8px;
+}
+
+.interview-summary-card {
+  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, #eff6ff, #f8fbff);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  display: grid;
+  gap: 12px;
+}
+
+.interview-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.interview-score strong {
+  font-size: 2rem;
+  color: #0f172a;
+}
+
+.interview-score span {
+  color: #64748b;
+}
+
+.interview-rubric {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.interview-rubric div {
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  display: grid;
+  gap: 4px;
+}
+
+.interview-rubric span {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.interview-rubric strong {
+  color: #0f172a;
 }
 
 .feedback-box.success {
@@ -765,6 +859,7 @@ td {
   .syntax-grid,
   .hero-grid,
   .schema-preview-grid,
+  .mastery-grid,
   .path-grid,
   .learn-overview {
     grid-template-columns: repeat(2, minmax(0, 1fr));
