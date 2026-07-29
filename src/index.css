@@ -1,7 +1,13 @@
+@import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/500.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
 :root {
   color-scheme: light;
   font-family:
-    Inter,
+    Outfit,
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -38,6 +44,16 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+code,
+pre {
+  font-family:
+    'JetBrains Mono',
+    'Cascadia Code',
+    'SFMono-Regular',
+    Consolas,
+    monospace;
 }
 
 button:disabled {

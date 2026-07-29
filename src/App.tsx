@@ -10,6 +10,7 @@ import {
   Flame,
   GraduationCap,
   LayoutDashboard,
+  Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
@@ -18,6 +19,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trophy,
+  X,
 } from 'lucide-react'
 
 import './App.css'
@@ -93,6 +95,24 @@ const viewMeta: Record<View, { label: string; icon: typeof LayoutDashboard }> = 
   schema: { label: 'Schema', icon: Database },
   syntax: { label: 'Syntax Guide', icon: BookOpen },
 }
+
+const navGroups: Array<{ label: string; views: View[] }> = [
+  { label: 'Learn', views: ['dashboard', 'learn'] },
+  { label: 'Apply', views: ['practice', 'career', 'interview', 'debug', 'review'] },
+  { label: 'Reference', views: ['schema', 'syntax'] },
+]
+
+const lessonTabs = [
+  { id: 'concept', label: 'Concept' },
+  { id: 'example', label: 'Example' },
+  { id: 'task', label: 'Task' },
+] as const
+
+const workspaceTabs = [
+  { id: 'results', label: 'Results' },
+  { id: 'coach', label: 'Coach' },
+  { id: 'explanation', label: 'Explanation' },
+] as const
 
 const syntaxReference = [
   {
@@ -1103,6 +1123,10 @@ const App = () => {
   const [practiceSeed, setPracticeSeed] = useState(0)
   const [interviewSecondsLeft, setInterviewSecondsLeft] = useState<number | null>(null)
   const [taskMenuCollapsed, setTaskMenuCollapsed] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [lessonTab, setLessonTab] = useState<(typeof lessonTabs)[number]['id']>('concept')
+  const [workspaceTab, setWorkspaceTab] = useState<(typeof workspaceTabs)[number]['id']>('results')
+  const [showFullMasteryReport, setShowFullMasteryReport] = useState(false)
   const [activeReviewSourceId, setActiveReviewSourceId] = useState<string | null>(null)
   const [progressReady, setProgressReady] = useState(false)
   const [schemaOverview, setSchemaOverview] = useState<{ counts: Record<string, number>; samples: Record<string, QueryResult> } | null>(null)
@@ -1220,6 +1244,10 @@ const App = () => {
     }
   }, [view])
 
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [view, selectedChallengeId])
+
   const practicePool = useMemo(() => {
     return [
       ...lessonsByTrack.beginner,
@@ -1308,6 +1336,7 @@ const App = () => {
     () => learnChallenges.findIndex((challenge) => challenge.id === currentChallenge?.id),
     [currentChallenge?.id],
   )
+  const currentLearnLessonPosition = currentLearnChallengeIndex >= 0 ? currentLearnChallengeIndex + 1 : null
   const currentAttemptCount = useMemo(
     () => (currentChallenge ? progress.queryHistory[currentChallenge.id]?.length ?? 0 : 0),
     [currentChallenge, progress.queryHistory],
@@ -1364,6 +1393,7 @@ const App = () => {
       })
       .sort((left, right) => right.score - left.score || right.completed - left.completed || left.concept.localeCompare(right.concept))
   }, [progress.completedIds, progress.hintSteps, progress.queryHistory])
+  const weakestConcepts = useMemo(() => conceptMastery.slice(-3).reverse(), [conceptMastery])
   const filteredSyntaxReference = useMemo(() => {
     const term = syntaxSearch.trim().toLowerCase()
     if (!term) {
@@ -1384,6 +1414,16 @@ const App = () => {
         : null,
     [currentLearnChallengeIndex],
   )
+
+  useEffect(() => {
+    if (view === 'learn') {
+      setLessonTab('concept')
+    }
+  }, [currentChallenge?.id, view])
+
+  useEffect(() => {
+    setWorkspaceTab('results')
+  }, [currentChallenge?.id, view])
 
   useEffect(() => {
     if (!currentChallenge) {
@@ -1706,6 +1746,11 @@ const App = () => {
     }
   }
 
+  const learnTheory = useMemo(
+    () => (view === 'learn' && currentChallenge ? getLearnModeTheory(currentChallenge) : null),
+    [currentChallenge, view],
+  )
+
   function getFollowUpPrompt(challenge: Challenge) {
     if (challenge.followUp) {
       return challenge.followUp
@@ -1941,6 +1986,94 @@ const App = () => {
 
   return (
     <div className="app-shell">
+      <header className="mobile-shell">
+        <button type="button" className="brand-button" onClick={() => setView('dashboard')} aria-label="Go to dashboard">
+          <div className="brand-mark">SQL</div>
+          <div className="brand-copy">
+            <strong>Analyst Quest</strong>
+            <span>{viewMeta[view].label}</span>
+          </div>
+        </button>
+        <div className="mobile-shell-meta">
+          <span className="mobile-pill">{progress.xp} XP</span>
+          <span className="mobile-pill">{progress.streak} day streak</span>
+        </div>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={mobileNavOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={mobileNavOpen}
+          aria-controls="mobile-nav-drawer"
+          onClick={() => setMobileNavOpen((current) => !current)}
+        >
+          {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+      </header>
+
+      <div className={`mobile-scrim ${mobileNavOpen ? 'open' : ''}`} onClick={() => setMobileNavOpen(false)} />
+
+      <aside className={`mobile-drawer ${mobileNavOpen ? 'open' : ''}`} id="mobile-nav-drawer" aria-label="Navigation drawer">
+        <div className="brand-block">
+          <div className="brand-mark">SQL</div>
+          <div>
+            <h1>Analyst Quest</h1>
+            <p>Learn SQL like the job depends on it.</p>
+          </div>
+        </div>
+
+        <div className="rank-panel">
+          <div className="rank-header">
+            <span>{rank.current.label}</span>
+            <strong>{progress.xp} XP</strong>
+          </div>
+          <div className="progress-bar">
+            <span style={{ width: `${rank.progressPct}%` }} />
+          </div>
+          <small>{rank.next ? `${rank.progressPct}% to ${rank.next.label}` : 'Max rank reached'}</small>
+        </div>
+
+        <nav className="nav-groups" aria-label="Primary navigation">
+          {navGroups.map((group) => (
+            <section key={group.label} className="nav-group">
+              <span className="nav-group-label">{group.label}</span>
+              <div className="nav-list">
+                {group.views.map((viewKey) => {
+                  const meta = viewMeta[viewKey]
+                  const Icon = meta.icon
+
+                  return (
+                    <button
+                      key={viewKey}
+                      type="button"
+                      className={`nav-button ${view === viewKey ? 'active' : ''}`}
+                      aria-current={view === viewKey ? 'page' : undefined}
+                      onClick={() => {
+                        setView(viewKey)
+                        setMobileNavOpen(false)
+                      }}
+                    >
+                      <Icon size={18} />
+                      <span>{meta.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </nav>
+
+        <div className="sidebar-foot">
+          <div className="mini-stat">
+            <Flame size={16} />
+            <span>{progress.streak} day streak</span>
+          </div>
+          <div className="mini-stat">
+            <Trophy size={16} />
+            <span>{completionPct}% complete</span>
+          </div>
+        </div>
+      </aside>
+
       <aside className="sidebar">
         <div className="brand-block">
           <div className="brand-mark">SQL</div>
@@ -1961,21 +2094,31 @@ const App = () => {
           <small>{rank.next ? `${rank.progressPct}% to ${rank.next.label}` : 'Max rank reached'}</small>
         </div>
 
-        <nav className="nav-list">
-          {Object.entries(viewMeta).map(([viewKey, meta]) => {
-            const Icon = meta.icon
-            return (
-              <button
-                key={viewKey}
-                type="button"
-                className={`nav-button ${view === viewKey ? 'active' : ''}`}
-                onClick={() => setView(viewKey as View)}
-              >
-                <Icon size={18} />
-                <span>{meta.label}</span>
-              </button>
-            )
-          })}
+        <nav className="nav-groups" aria-label="Primary navigation">
+          {navGroups.map((group) => (
+            <section key={group.label} className="nav-group">
+              <span className="nav-group-label">{group.label}</span>
+              <div className="nav-list">
+                {group.views.map((viewKey) => {
+                  const meta = viewMeta[viewKey]
+                  const Icon = meta.icon
+
+                  return (
+                    <button
+                      key={viewKey}
+                      type="button"
+                      className={`nav-button ${view === viewKey ? 'active' : ''}`}
+                      aria-current={view === viewKey ? 'page' : undefined}
+                      onClick={() => setView(viewKey)}
+                    >
+                      <Icon size={18} />
+                      <span>{meta.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
         </nav>
 
         <div className="sidebar-foot">
@@ -1993,41 +2136,70 @@ const App = () => {
       <main className="main-shell">
         {view === 'dashboard' ? (
           <section className="dashboard">
-            <div className="hero-panel">
-              <div>
-                <span className="eyebrow">Career progression</span>
-                <h2>Go from SQL Intern to SQL Master with real analyst missions.</h2>
-                <p>
-                  Work through lessons, random drills, ecommerce missions, timed interview prompts, and broken-query debugging
-                  against a live in-browser SQLite dataset.
-                </p>
-              </div>
-              <div className="hero-grid">
-                <div className="metric-card">
+            <div className="dashboard-hero">
+              <section className="panel continue-panel">
+                <div className="section-heading">
+                  <h3>Continue learning</h3>
+                  <span>{completionPct}% complete</span>
+                </div>
+                {nextChallenge ? (
+                  <>
+                    <div className="continue-copy">
+                      <h2>{nextChallenge.title}</h2>
+                      <p>{nextChallenge.task}</p>
+                    </div>
+                    <div className="continue-meta">
+                      <span>{nextChallenge.mode}</span>
+                      <span>{nextChallenge.concept}</span>
+                      <span>{nextChallenge.difficulty}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => {
+                        setView(nextChallenge.mode === 'career' ? 'career' : nextChallenge.mode === 'interview' ? 'interview' : nextChallenge.mode === 'debug' ? 'debug' : 'learn')
+                        setSelectedChallengeId(nextChallenge.id)
+                      }}
+                    >
+                      Open challenge
+                    </button>
+                  </>
+                ) : (
+                  <div className="empty-state">You have cleared the full path. Use Practice Mode to keep sharpening.</div>
+                )}
+              </section>
+
+              <div className="dashboard-metrics">
+                <article className="metric-card">
                   <span>Completed</span>
                   <strong>{completedChallenges.length}</strong>
                   <small>of {allChallenges.length} total challenges</small>
-                </div>
-                <div className="metric-card">
+                </article>
+                <article className="metric-card">
                   <span>Badges</span>
                   <strong>{progress.badges.length}</strong>
                   <small>earned through milestones</small>
-                </div>
-                <div className="metric-card">
+                </article>
+                <article className="metric-card">
                   <span>Interview best</span>
                   <strong>{progress.bestInterviewScore}</strong>
                   <small>score out of 100</small>
-                </div>
+                </article>
+                <article className="metric-card">
+                  <span>Rank</span>
+                  <strong>{rank.current.label}</strong>
+                  <small>{rank.next ? `Next: ${rank.next.label}` : 'Max rank reached'}</small>
+                </article>
               </div>
             </div>
 
-            <div className="dashboard-grid">
-              <section className="panel">
+            <div className="dashboard-columns">
+              <section className="panel dashboard-path-panel">
                 <div className="section-heading">
-                  <h3>Learning Path</h3>
+                  <h3>Learning path</h3>
                   <span>Structured progression</span>
                 </div>
-                <div className="path-grid">
+                <div className="path-track">
                   {rankSteps.map((step, index) => (
                     <div key={step.label} className={`path-step ${progress.xp >= step.minXp ? 'reached' : ''}`}>
                       <strong>{index + 1}</strong>
@@ -2037,83 +2209,80 @@ const App = () => {
                 </div>
               </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <h3>Recommended Next</h3>
-                  <span>Keep momentum</span>
-                </div>
-                {nextChallenge ? (
-                  <div className="next-card">
-                    <h4>{nextChallenge.title}</h4>
-                    <p>{nextChallenge.task}</p>
-                    <button type="button" className="primary-button" onClick={() => {
-                      setView(nextChallenge.mode === 'career' ? 'career' : nextChallenge.mode === 'interview' ? 'interview' : nextChallenge.mode === 'debug' ? 'debug' : 'learn')
-                      setSelectedChallengeId(nextChallenge.id)
-                    }}>
-                      Open challenge
+              <section className="dashboard-side-stack">
+                <section className="panel">
+                  <div className="section-heading">
+                    <h3>Weakest concepts</h3>
+                    <button type="button" className="text-button" onClick={() => setShowFullMasteryReport((current) => !current)}>
+                      {showFullMasteryReport ? 'Hide full report' : 'Full report'}
                     </button>
                   </div>
-                ) : (
-                  <div className="empty-state">You have cleared the full path. Use Practice Mode to keep sharpening.</div>
-                )}
-              </section>
-
-              <section className="panel">
-                <div className="section-heading">
-                  <h3>Badges</h3>
-                  <span>Progress markers</span>
-                </div>
-                <div className="badge-list">
-                  {progress.badges.length > 0 ? (
-                    progress.badges.map((badge) => (
-                      <div key={badge} className="badge-pill">
-                        <Award size={14} />
-                        <span>{badge}</span>
+                  <div className="mastery-grid">
+                    {weakestConcepts.length > 0 ? (
+                      weakestConcepts.map((entry) => (
+                        <article key={entry.concept} className="mastery-card">
+                          <div className="mastery-header">
+                            <strong>{entry.concept}</strong>
+                            <span>{entry.score}%</span>
+                          </div>
+                          <div className="progress-bar">
+                            <span style={{ width: `${entry.score}%` }} />
+                          </div>
+                          <small>
+                            {entry.completed}/{entry.total} complete · {entry.retries} retries · {entry.hints} hints
+                          </small>
+                        </article>
+                      ))
+                    ) : (
+                      <div className="empty-state">Mastery data will appear after your first completed lesson.</div>
+                    )}
+                    {showFullMasteryReport ? (
+                      <div className="mastery-report">
+                        {conceptMastery.map((entry) => (
+                          <div key={entry.concept} className="mastery-report-row">
+                            <span>{entry.concept}</span>
+                            <strong>{entry.score}%</strong>
+                          </div>
+                        ))}
                       </div>
-                    ))
-                  ) : (
-                    <div className="empty-state">Your first badge unlocks after the first successful challenge.</div>
-                  )}
-                </div>
-              </section>
+                    ) : null}
+                  </div>
+                </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <h3>Concept mastery</h3>
-                  <span>Strength across SQL patterns</span>
-                </div>
-                <div className="mastery-grid">
-                  {conceptMastery.slice(0, 6).map((entry) => (
-                    <article key={entry.concept} className="mastery-card">
-                      <div className="mastery-header">
-                        <strong>{entry.concept}</strong>
-                        <span>{entry.score}%</span>
-                      </div>
-                      <div className="progress-bar">
-                        <span style={{ width: `${entry.score}%` }} />
-                      </div>
-                      <small>
-                        {entry.completed}/{entry.total} complete · {entry.firstTry} first tries · {entry.retries} retries · {entry.hints} hints
-                      </small>
-                    </article>
-                  ))}
-                </div>
-              </section>
+                <section className="panel">
+                  <div className="section-heading">
+                    <h3>Badges</h3>
+                    <span>Progress markers</span>
+                  </div>
+                  <div className="badge-list">
+                    {progress.badges.length > 0 ? (
+                      progress.badges.map((badge) => (
+                        <div key={badge} className="badge-pill">
+                          <Award size={14} />
+                          <span>{badge}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-state">Your first badge unlocks after the first successful challenge.</div>
+                    )}
+                  </div>
+                </section>
 
-              <section className="panel">
-                <div className="section-heading">
-                  <h3>Dataset Overview</h3>
-                  <span>Business-ready schema</span>
-                </div>
-                <div className="schema-preview-grid">
-                  {schemaTables.map((table) => (
-                    <div key={table.name} className="schema-preview-card">
-                      <strong>{table.name}</strong>
-                      <p>{table.description}</p>
-                      <small>{table.columns.length} columns</small>
-                    </div>
-                  ))}
-                </div>
+                <section className="panel">
+                  <div className="section-heading">
+                    <h3>Schema overview</h3>
+                    <span>Compact reference</span>
+                  </div>
+                  <div className="schema-preview-grid compact">
+                    {schemaTables.slice(0, 3).map((table) => (
+                      <div key={table.name} className="schema-preview-card">
+                        <strong>{table.name}</strong>
+                        <p>{table.description}</p>
+                        <small>{table.columns.length} columns</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </section>
             </div>
           </section>
@@ -2346,79 +2515,344 @@ const App = () => {
                       {taskMenuCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
                       <span>{taskMenuCollapsed ? 'Show tasks' : 'Hide tasks'}</span>
                     </button>
+                    {view === 'learn' && currentLearnLessonPosition ? (
+                      <span className="workspace-step">
+                        Lesson {currentLearnLessonPosition} of {learnChallenges.length}
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="panel detail-panel">
-                    {view === 'learn' ? (
-                      <>
-                        <div className="detail-header">
+
+                  {view === 'learn' && learnTheory ? (
+                    <section className="learn-workspace">
+                      <article className="panel lesson-panel">
+                        <div className="detail-header lesson-header">
                           <div>
                             <span className="eyebrow">Lesson first</span>
                             <h3>{currentChallenge.title}</h3>
+                            <p className="context">{currentChallenge.businessContext}</p>
                           </div>
-                          <div className="lesson-chip">
-                            <BookOpen size={16} />
-                            <span>{currentChallenge.concept}</span>
-                          </div>
-                        </div>
-                        <p className="context">{currentChallenge.businessContext}</p>
-                        <div className="learn-overview">
-                          <div className="learn-card">
-                            <strong>What you are learning</strong>
-                            <p>{renderTextWithInlineCode(getLearnModeTheory(currentChallenge).learningGoal)}</p>
-                          </div>
-                          <div className="learn-card">
-                            <strong>The idea behind it</strong>
-                            <p>{renderTextWithInlineCode(getLearnModeTheory(currentChallenge).theory)}</p>
-                          </div>
-                          <div className="learn-card">
-                            <strong>The SQL pattern</strong>
-                            <p>{renderTextWithInlineCode(getLearnModeTheory(currentChallenge).pattern)}</p>
+                          <div className="lesson-header-meta">
+                            <div className="lesson-chip">
+                              <BookOpen size={16} />
+                              <span>{currentChallenge.concept}</span>
+                            </div>
+                            <div className="lesson-progress">
+                              <span>{currentLearnLessonPosition}</span>
+                              <small>of {learnChallenges.length}</small>
+                            </div>
                           </div>
                         </div>
-                        <div className="learn-example">
-                          <div className="section-heading">
-                            <h3>Example Pattern</h3>
-                            <span>Study the structure, then solve the task with your own query</span>
-                          </div>
-                          <div className="example-code">
-                            <pre>{renderSqlTokens(getLearnModeTheory(currentChallenge).exampleQuery)}</pre>
+
+                        <div className="lesson-tabs" role="tablist" aria-label="Lesson sections">
+                          {lessonTabs.map((tab) => (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={lessonTab === tab.id}
+                              className={`tab-button ${lessonTab === tab.id ? 'active' : ''}`}
+                              onClick={() => setLessonTab(tab.id)}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="lesson-brief">
+                          <strong>Your practice task</strong>
+                          <p>{renderTextWithInlineCode(currentChallenge.task)}</p>
+                          <div className="lesson-brief-grid">
+                            <div>
+                              <span>Tables</span>
+                              <strong>{renderTextWithInlineCode(currentChallenge.relevantTables.join(', '))}</strong>
+                            </div>
+                            <div>
+                              <span>Expected shape</span>
+                              <strong>{renderTextWithInlineCode(currentChallenge.expectedColumns.join(', '))}</strong>
+                            </div>
+                            <div>
+                              <span>Watch out for</span>
+                              <strong>{renderTextWithInlineCode(currentChallenge.commonMistake)}</strong>
+                            </div>
                           </div>
                         </div>
-                        <div className="learn-overview learn-secondary">
-                          <div className="learn-card">
-                            <strong>Walkthrough</strong>
-                            <p>{renderTextWithInlineCode(getLearnModeTheory(currentChallenge).mentalModel)}</p>
-                          </div>
-                          <div className="learn-card">
-                            <strong>Why analysts use it</strong>
-                            <p>{renderTextWithInlineCode(currentChallenge.analystUseCase)}</p>
-                          </div>
-                          <div className="learn-card">
-                            <strong>Key takeaway</strong>
-                            <p>{renderTextWithInlineCode(getLearnModeTheory(currentChallenge).keyTakeaway)}</p>
-                          </div>
+
+                        <div className="lesson-tab-panel">
+                          {lessonTab === 'concept' ? (
+                            <div className="lesson-copy">
+                              <div>
+                                <span>What you are learning</span>
+                                <p>{renderTextWithInlineCode(learnTheory.learningGoal)}</p>
+                              </div>
+                              <div>
+                                <span>The idea behind it</span>
+                                <p>{renderTextWithInlineCode(learnTheory.theory)}</p>
+                              </div>
+                              <div>
+                                <span>The SQL pattern</span>
+                                <p>{renderTextWithInlineCode(learnTheory.pattern)}</p>
+                              </div>
+                              <div>
+                                <span>Key takeaway</span>
+                                <p>{renderTextWithInlineCode(learnTheory.keyTakeaway)}</p>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {lessonTab === 'example' ? (
+                            <div className="lesson-example-stack">
+                              <div className="section-heading">
+                                <h4>Example pattern</h4>
+                                <span>Study the structure, then solve the task with your own query</span>
+                              </div>
+                              <div className="example-code">
+                                <pre>{renderSqlTokens(learnTheory.exampleQuery)}</pre>
+                              </div>
+                              <div className="lesson-copy compact">
+                                <div>
+                                  <span>Walkthrough</span>
+                                  <p>{renderTextWithInlineCode(learnTheory.mentalModel)}</p>
+                                </div>
+                                <div>
+                                  <span>Why analysts use it</span>
+                                  <p>{renderTextWithInlineCode(currentChallenge.analystUseCase)}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {lessonTab === 'task' ? (
+                            <div className="lesson-copy">
+                              <div>
+                                <span>Business context</span>
+                                <p>{renderTextWithInlineCode(currentChallenge.businessContext)}</p>
+                              </div>
+                              <div>
+                                <span>How to think about it</span>
+                                <p>{renderTextWithInlineCode(currentChallenge.explanation)}</p>
+                              </div>
+                              <div>
+                                <span>Follow-up variation</span>
+                                <p>{renderTextWithInlineCode(followUpPrompt ?? 'Change one piece of the query and observe how the result changes.')}</p>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
-                        <div className="detail-grid learn-detail-grid">
-                          <div>
-                            <strong>Your practice task</strong>
-                            <p>{renderTextWithInlineCode(currentChallenge.task)}</p>
+                      </article>
+
+                      <div className="learn-right-rail">
+                        <article className="panel editor-panel">
+                          <div className="editor-toolbar">
+                            <div className="toolbar-title">
+                              <Database size={16} />
+                              <span>Your turn</span>
+                            </div>
+                            <div className="toolbar-actions">
+                              <button type="button" className="secondary-button" onClick={handleExplainQuery}>
+                                <Search size={16} />
+                                <span>Explain</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleEditorChange(getLearnModePracticeSql(currentChallenge))}
+                              >
+                                <BookOpen size={16} />
+                                <span>Scaffold</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
+                              >
+                                <RefreshCw size={16} />
+                                <span>Reset</span>
+                              </button>
+                              <button type="button" className="secondary-button" onClick={handleFormatSql}>
+                                <Sparkles size={16} />
+                                <span>Format</span>
+                              </button>
+                              <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || interviewIsExpired}>
+                                <Play size={16} />
+                                <span>{isRunning ? 'Running…' : interviewIsExpired ? 'Time Expired' : 'Run Query'}</span>
+                              </button>
+                            </div>
                           </div>
-                          <div>
-                            <strong>Tables to use</strong>
-                            <p>{renderTextWithInlineCode(currentChallenge.relevantTables.join(', '))}</p>
+                          <p className="editor-intro">
+                            Start with the pattern, then write the query that solves the task in your own words.
+                          </p>
+                          <div className="code-editor-shell">
+                            <div className="code-editor-gutter" aria-hidden="true">
+                              <div className="code-editor-gutter-scroll" style={{ transform: `translateY(-${editorScrollTop}px)` }}>
+                                {Array.from({ length: editorLineCount }, (_, index) => (
+                                  <span key={index}>{index + 1}</span>
+                                ))}
+                              </div>
+                            </div>
+                            <textarea
+                              aria-label="SQL practice editor"
+                              value={editorSql}
+                              onChange={(event) => handleEditorChange(event.target.value)}
+                              onKeyDown={handleEditorKeyDown}
+                              onScroll={handleEditorScroll}
+                              spellCheck={false}
+                              wrap="off"
+                              disabled={interviewIsExpired}
+                            />
                           </div>
-                          <div>
-                            <strong>Expected result shape</strong>
-                            <p>{renderTextWithInlineCode(currentChallenge.expectedColumns.join(', '))}</p>
+                        </article>
+
+                        <article className="panel workspace-panel">
+                          <div className="workspace-tabs" role="tablist" aria-label="Query output">
+                            {workspaceTabs.map((tab) => (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={workspaceTab === tab.id}
+                                className={`tab-button ${workspaceTab === tab.id ? 'active' : ''}`}
+                                onClick={() => setWorkspaceTab(tab.id)}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
                           </div>
-                          <div>
-                            <strong>Watch out for</strong>
-                            <p>{renderTextWithInlineCode(currentChallenge.commonMistake)}</p>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
+
+                          {workspaceTab === 'results' ? <div className="workspace-panel-body">{renderResultTable(queryResult)}</div> : null}
+
+                          {workspaceTab === 'coach' ? (
+                            <div className="workspace-panel-body stack">
+                              <div className={`feedback-box ${feedback.status}`}>
+                                <strong>{feedback.title}</strong>
+                                <p>{feedback.message}</p>
+                                {feedback.detail ? <small>{feedback.detail}</small> : null}
+                              </div>
+                              {currentChallenge ? (
+                                <div className="hint-card adaptive-hint">
+                                  <Search size={14} />
+                                  <span>{renderHintBody(getAdaptiveCoachHint(currentChallenge, currentAttemptCount) ?? 'Run the query once to unlock the first coach hint.')}</span>
+                                </div>
+                              ) : null}
+                              <div className="hint-stack">
+                                {currentChallenge.hints.slice(0, hintStep).map((hint, index) => (
+                                  <div key={`${currentChallenge.id}-hint-${index}`} className="hint-card">
+                                    <Search size={14} />
+                                    {renderHintBody(hint)}
+                                  </div>
+                                ))}
+                                {hintStep < currentChallenge.hints.length ? (
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => {
+                                      const nextHintStep = hintStep + 1
+                                      setHintStep(nextHintStep)
+
+                                      if (currentChallenge && progressReady) {
+                                        setProgress((current) => ({
+                                          ...current,
+                                          hintSteps: {
+                                            ...(current.hintSteps ?? {}),
+                                            [currentChallenge.id]: nextHintStep,
+                                          },
+                                        }))
+                                      }
+                                    }}
+                                  >
+                                    Reveal hint {hintStep + 1}
+                                  </button>
+                                ) : null}
+                              </div>
+                              {interviewAttemptSummary ? (
+                                <div className="interview-summary-card">
+                                  <div className="section-heading">
+                                    <h4>Attempt summary</h4>
+                                    <span>Rubric-based interview scoring</span>
+                                  </div>
+                                  <div className="interview-score">
+                                    <strong>{interviewAttemptSummary.score}</strong>
+                                    <span>/ 100</span>
+                                  </div>
+                                  <div className="interview-rubric">
+                                    <div>
+                                      <span>Accuracy</span>
+                                      <strong>{interviewAttemptSummary.accuracyScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Speed</span>
+                                      <strong>{interviewAttemptSummary.speedScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Discipline</span>
+                                      <strong>{interviewAttemptSummary.disciplineScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Attempts</span>
+                                      <strong>{interviewAttemptSummary.attempts}</strong>
+                                    </div>
+                                  </div>
+                                  <small>
+                                    {interviewAttemptSummary.status === 'expired'
+                                      ? 'The timer expired before submission.'
+                                      : interviewAttemptSummary.status === 'success'
+                                        ? 'The query was correct within the time limit.'
+                                        : 'The query ran but did not match the expected answer.'}
+                                  </small>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {workspaceTab === 'explanation' ? (
+                            <div className="workspace-panel-body stack">
+                              {queryExplanationLines.length > 0 ? (
+                                <div className="query-explanation-card">
+                                  <div className="section-heading">
+                                    <h4>How this query runs</h4>
+                                    <span>Execution order and business meaning</span>
+                                  </div>
+                                  <ol>
+                                    {queryExplanationLines.map((line, index) => (
+                                      <li key={`${index}-${line}`}>{line}</li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              ) : null}
+                              {followUpPrompt ? (
+                                <div className="explanation-stack">
+                                  <div>
+                                    <strong>Try this next</strong>
+                                    <p>{followUpPrompt}</p>
+                                  </div>
+                                </div>
+                              ) : null}
+                              <div className="explanation-stack">
+                                <div>
+                                  <strong>Why it works</strong>
+                                  <p>{currentChallenge.explanation}</p>
+                                </div>
+                                <div>
+                                  <strong>Common beginner mistake</strong>
+                                  <p>{currentChallenge.commonMistake}</p>
+                                </div>
+                                <div>
+                                  <strong>How it shows up on the job</strong>
+                                  <p>{currentChallenge.analystUseCase}</p>
+                                </div>
+                              </div>
+                              {view === 'learn' && feedback.status === 'success' ? (
+                                <button type="button" className="primary-button lesson-progress-button" onClick={handleAdvanceLearnLesson}>
+                                  <span>{nextLearnChallenge ? 'Next Lesson' : 'Finish Lessons'}</span>
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </article>
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      <div className="panel detail-panel">
                         <div className="detail-header">
                           <div>
                             <span className="eyebrow">{currentChallenge.roleFocus}</span>
@@ -2449,212 +2883,216 @@ const App = () => {
                             <p>{currentChallenge.expectedColumns.join(', ')}</p>
                           </div>
                         </div>
-                      </>
-                    )}
-                  </div>
+                      </div>
 
-                  <div className="panel editor-panel">
-                    <div className="editor-toolbar">
-                      <div className="toolbar-title">
-                        <Database size={16} />
-                        <span>{view === 'learn' ? 'Your Turn' : 'SQLite Editor'}</span>
+                      <div className="panel editor-panel">
+                        <div className="editor-toolbar">
+                          <div className="toolbar-title">
+                            <Database size={16} />
+                            <span>SQLite Editor</span>
+                          </div>
+                          <div className="toolbar-actions">
+                            <button type="button" className="secondary-button" onClick={handleExplainQuery}>
+                              <Search size={16} />
+                              <span>Explain</span>
+                            </button>
+                            {view === 'learn' ? (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => handleEditorChange(getLearnModePracticeSql(currentChallenge))}
+                              >
+                                <BookOpen size={16} />
+                                <span>Scaffold</span>
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
+                            >
+                              <RefreshCw size={16} />
+                              <span>Reset</span>
+                            </button>
+                            <button type="button" className="secondary-button" onClick={handleFormatSql}>
+                              <Sparkles size={16} />
+                              <span>Format</span>
+                            </button>
+                            <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || interviewIsExpired}>
+                              <Play size={16} />
+                              <span>{isRunning ? 'Running…' : interviewIsExpired ? 'Time Expired' : 'Run Query'}</span>
+                            </button>
+                          </div>
+                        </div>
+                        {view === 'interview' ? (
+                          <p className="editor-intro">
+                            Work from memory first. The timer is enforced, and the score reflects correctness, speed, and how many hints you needed.
+                          </p>
+                        ) : (
+                          <p className="editor-intro">Run the query to validate the result, then use the coach and explanation tabs for feedback.</p>
+                        )}
+                        <div className="code-editor-shell">
+                          <div className="code-editor-gutter" aria-hidden="true">
+                            <div className="code-editor-gutter-scroll" style={{ transform: `translateY(-${editorScrollTop}px)` }}>
+                              {Array.from({ length: editorLineCount }, (_, index) => (
+                                <span key={index}>{index + 1}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <textarea
+                            aria-label="SQL query editor"
+                            value={editorSql}
+                            onChange={(event) => handleEditorChange(event.target.value)}
+                            onKeyDown={handleEditorKeyDown}
+                            onScroll={handleEditorScroll}
+                            spellCheck={false}
+                            wrap="off"
+                            disabled={interviewIsExpired}
+                          />
+                        </div>
                       </div>
-                      <div className="toolbar-actions">
-                        <button type="button" className="secondary-button" onClick={handleExplainQuery}>
-                          <Search size={16} />
-                          <span>Explain my query</span>
-                        </button>
-                        {view === 'learn' ? (
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => handleEditorChange(getLearnModePracticeSql(currentChallenge))}
-                          >
-                            <BookOpen size={16} />
-                            <span>Load Scaffold</span>
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
-                        >
-                          <RefreshCw size={16} />
-                          <span>Reset SQL</span>
-                        </button>
-                        <button type="button" className="secondary-button" onClick={handleFormatSql}>
-                          <Sparkles size={16} />
-                          <span>Format SQL</span>
-                        </button>
-                        <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || interviewIsExpired}>
-                          <Play size={16} />
-                          <span>{isRunning ? 'Running…' : interviewIsExpired ? 'Time Expired' : 'Run Query'}</span>
-                        </button>
-                      </div>
-                    </div>
-                    {view === 'learn' ? (
-                      <p className="editor-intro">
-                        Start from the example pattern above, then write the query that solves this lesson’s task.
-                      </p>
-                    ) : view === 'interview' ? (
-                      <p className="editor-intro">
-                        Work from memory first. The timer is enforced, and the score reflects correctness, speed, and how many hints you needed.
-                      </p>
-                    ) : null}
-                    <div className="code-editor-shell">
-                      <div className="code-editor-gutter" aria-hidden="true">
-                        <div className="code-editor-gutter-scroll" style={{ transform: `translateY(-${editorScrollTop}px)` }}>
-                          {Array.from({ length: editorLineCount }, (_, index) => (
-                            <span key={index}>{index + 1}</span>
+
+                      <div className="panel workspace-panel">
+                        <div className="workspace-tabs" role="tablist" aria-label="Query output">
+                          {workspaceTabs.map((tab) => (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              role="tab"
+                              aria-selected={workspaceTab === tab.id}
+                              className={`tab-button ${workspaceTab === tab.id ? 'active' : ''}`}
+                              onClick={() => setWorkspaceTab(tab.id)}
+                            >
+                              {tab.label}
+                            </button>
                           ))}
                         </div>
-                      </div>
-                      <textarea
-                        value={editorSql}
-                        onChange={(event) => handleEditorChange(event.target.value)}
-                        onKeyDown={handleEditorKeyDown}
-                        onScroll={handleEditorScroll}
-                        spellCheck={false}
-                        wrap="off"
-                        disabled={interviewIsExpired}
-                      />
-                    </div>
-                  </div>
 
-                  <div className="result-grid">
-                    <div className="panel">
-                      <div className="section-heading">
-                        <h3>Result Table</h3>
-                        <span>Validation is result-based, not query-text based</span>
-                      </div>
-                      {renderResultTable(queryResult)}
-                    </div>
+                        <div className="workspace-panel-body">
+                          {workspaceTab === 'results' ? renderResultTable(queryResult) : null}
+                          {workspaceTab === 'coach' ? (
+                            <div className="stack">
+                              <div className={`feedback-box ${feedback.status}`}>
+                                <strong>{feedback.title}</strong>
+                                <p>{feedback.message}</p>
+                                {feedback.detail ? <small>{feedback.detail}</small> : null}
+                              </div>
+                              {currentChallenge ? (
+                                <div className="hint-card adaptive-hint">
+                                  <Search size={14} />
+                                  <span>{renderHintBody(getAdaptiveCoachHint(currentChallenge, currentAttemptCount) ?? 'Run the query once to unlock the first coach hint.')}</span>
+                                </div>
+                              ) : null}
+                              <div className="hint-stack">
+                                {currentChallenge.hints.slice(0, hintStep).map((hint, index) => (
+                                  <div key={`${currentChallenge.id}-hint-${index}`} className="hint-card">
+                                    <Search size={14} />
+                                    {renderHintBody(hint)}
+                                  </div>
+                                ))}
+                                {hintStep < currentChallenge.hints.length ? (
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => {
+                                      const nextHintStep = hintStep + 1
+                                      setHintStep(nextHintStep)
 
-                    <div className="panel">
-                      <div className="section-heading">
-                        <h3>Coach Feedback</h3>
-                        <span>Hints, explanation, and analyst framing</span>
-                      </div>
-                      <div className={`feedback-box ${feedback.status}`}>
-                        <strong>{feedback.title}</strong>
-                        <p>{feedback.message}</p>
-                        {feedback.detail ? <small>{feedback.detail}</small> : null}
-                      </div>
-                      {currentChallenge ? (
-                        <div className="hint-card adaptive-hint">
-                          <Search size={14} />
-                          <span>{renderHintBody(getAdaptiveCoachHint(currentChallenge, currentAttemptCount) ?? 'Run the query once to unlock the first coach hint.')}</span>
-                        </div>
-                      ) : null}
-                      {queryExplanationLines.length > 0 ? (
-                        <div className="query-explanation-card">
-                          <div className="section-heading">
-                            <h4>How this query runs</h4>
-                            <span>Execution order and business meaning</span>
-                          </div>
-                          <ol>
-                            {queryExplanationLines.map((line, index) => (
-                              <li key={`${index}-${line}`}>{line}</li>
-                            ))}
-                          </ol>
-                        </div>
-                      ) : null}
-                      {interviewAttemptSummary ? (
-                        <div className="interview-summary-card">
-                          <div className="section-heading">
-                            <h4>Attempt summary</h4>
-                            <span>Rubric-based interview scoring</span>
-                          </div>
-                          <div className="interview-score">
-                            <strong>{interviewAttemptSummary.score}</strong>
-                            <span>/ 100</span>
-                          </div>
-                          <div className="interview-rubric">
-                            <div>
-                              <span>Accuracy</span>
-                              <strong>{interviewAttemptSummary.accuracyScore}</strong>
+                                      if (currentChallenge && progressReady) {
+                                        setProgress((current) => ({
+                                          ...current,
+                                          hintSteps: {
+                                            ...(current.hintSteps ?? {}),
+                                            [currentChallenge.id]: nextHintStep,
+                                          },
+                                        }))
+                                      }
+                                    }}
+                                  >
+                                    Reveal hint {hintStep + 1}
+                                  </button>
+                                ) : null}
+                              </div>
+                              {interviewAttemptSummary ? (
+                                <div className="interview-summary-card">
+                                  <div className="section-heading">
+                                    <h4>Attempt summary</h4>
+                                    <span>Rubric-based interview scoring</span>
+                                  </div>
+                                  <div className="interview-score">
+                                    <strong>{interviewAttemptSummary.score}</strong>
+                                    <span>/ 100</span>
+                                  </div>
+                                  <div className="interview-rubric">
+                                    <div>
+                                      <span>Accuracy</span>
+                                      <strong>{interviewAttemptSummary.accuracyScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Speed</span>
+                                      <strong>{interviewAttemptSummary.speedScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Discipline</span>
+                                      <strong>{interviewAttemptSummary.disciplineScore}</strong>
+                                    </div>
+                                    <div>
+                                      <span>Attempts</span>
+                                      <strong>{interviewAttemptSummary.attempts}</strong>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
-                            <div>
-                              <span>Speed</span>
-                              <strong>{interviewAttemptSummary.speedScore}</strong>
+                          ) : null}
+                          {workspaceTab === 'explanation' ? (
+                            <div className="stack">
+                              {queryExplanationLines.length > 0 ? (
+                                <div className="query-explanation-card">
+                                  <div className="section-heading">
+                                    <h4>How this query runs</h4>
+                                    <span>Execution order and business meaning</span>
+                                  </div>
+                                  <ol>
+                                    {queryExplanationLines.map((line, index) => (
+                                      <li key={`${index}-${line}`}>{line}</li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              ) : null}
+                              {followUpPrompt ? (
+                                <div className="explanation-stack">
+                                  <div>
+                                    <strong>Try this next</strong>
+                                    <p>{followUpPrompt}</p>
+                                  </div>
+                                </div>
+                              ) : null}
+                              <div className="explanation-stack">
+                                <div>
+                                  <strong>Why it works</strong>
+                                  <p>{currentChallenge.explanation}</p>
+                                </div>
+                                <div>
+                                  <strong>Common beginner mistake</strong>
+                                  <p>{currentChallenge.commonMistake}</p>
+                                </div>
+                                <div>
+                                  <strong>How it shows up on the job</strong>
+                                  <p>{currentChallenge.analystUseCase}</p>
+                                </div>
+                              </div>
+                              {view === 'learn' && feedback.status === 'success' ? (
+                                <button type="button" className="primary-button lesson-progress-button" onClick={handleAdvanceLearnLesson}>
+                                  <span>{nextLearnChallenge ? 'Next Lesson' : 'Finish Lessons'}</span>
+                                </button>
+                              ) : null}
                             </div>
-                            <div>
-                              <span>Discipline</span>
-                              <strong>{interviewAttemptSummary.disciplineScore}</strong>
-                            </div>
-                            <div>
-                              <span>Attempts</span>
-                              <strong>{interviewAttemptSummary.attempts}</strong>
-                            </div>
-                          </div>
-                          <small>
-                            {interviewAttemptSummary.status === 'expired'
-                              ? 'The timer expired before submission.'
-                              : interviewAttemptSummary.status === 'success'
-                                ? 'The query was correct within the time limit.'
-                                : 'The query ran but did not match the expected answer.'}
-                          </small>
-                        </div>
-                      ) : null}
-                      {view === 'learn' && feedback.status === 'success' ? (
-                        <button type="button" className="primary-button lesson-progress-button" onClick={handleAdvanceLearnLesson}>
-                          <span>{nextLearnChallenge ? 'Next Lesson' : 'Finish Lessons'}</span>
-                        </button>
-                      ) : null}
-
-                      <div className="hint-stack">
-                        {currentChallenge.hints.slice(0, hintStep).map((hint, index) => (
-                          <div key={`${currentChallenge.id}-hint-${index}`} className="hint-card">
-                            <Search size={14} />
-                            {renderHintBody(hint)}
-                          </div>
-                        ))}
-                        {hintStep < currentChallenge.hints.length ? (
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => {
-                              const nextHintStep = hintStep + 1
-                              setHintStep(nextHintStep)
-
-                              if (currentChallenge && progressReady) {
-                                setProgress((current) => ({
-                                  ...current,
-                                  hintSteps: {
-                                    ...(current.hintSteps ?? {}),
-                                    [currentChallenge.id]: nextHintStep,
-                                  },
-                                }))
-                              }
-                            }}
-                          >
-                            Reveal hint {hintStep + 1}
-                          </button>
-                        ) : null}
-                      </div>
-
-                      <div className="explanation-stack">
-                        {followUpPrompt ? (
-                          <div>
-                            <strong>Try this next</strong>
-                            <p>{followUpPrompt}</p>
-                          </div>
-                        ) : null}
-                        <div>
-                          <strong>Why it works</strong>
-                          <p>{currentChallenge.explanation}</p>
-                        </div>
-                        <div>
-                          <strong>Common beginner mistake</strong>
-                          <p>{currentChallenge.commonMistake}</p>
-                        </div>
-                        <div>
-                          <strong>How it shows up on the job</strong>
-                          <p>{currentChallenge.analystUseCase}</p>
+                          ) : null}
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </>
               ) : (
                 <div className="panel">
