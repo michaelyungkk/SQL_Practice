@@ -72,7 +72,9 @@ const insertRows = (table: string, columns: string[], rows: Array<Array<number |
     )
     .join('\n')
 
-const createCustomers = (): CustomerRow[] => {
+const normalizeVariantSeed = (variantSeed: number) => Math.abs(Math.trunc(variantSeed)) % 7
+
+const createCustomers = (variantOffset = 0): CustomerRow[] => {
   const countries = ['Australia', 'United States', 'United Kingdom', 'Canada', 'Germany']
   const citiesByCountry: Record<string, string[]> = {
     Australia: ['Sydney', 'Melbourne', 'Brisbane', 'Perth'],
@@ -86,12 +88,12 @@ const createCustomers = (): CustomerRow[] => {
 
   return Array.from({ length: 72 }, (_, index) => {
     const customerId = index + 1
-    const country = countries[index % countries.length]
-    const city = citiesByCountry[country][index % citiesByCountry[country].length]
+    const country = countries[(index + variantOffset) % countries.length]
+    const city = citiesByCountry[country][(index + variantOffset) % citiesByCountry[country].length]
     const signupYear = index < 18 ? 2024 : 2025
-    const signupDate = dateFromIndex(signupYear, index + 2, index + 5)
-    const segment = segments[(index * 3) % segments.length]
-    const lastActiveDate = dateFromIndex(index % 5 === 0 ? 2026 : 2025, index + 7, index + 11)
+    const signupDate = dateFromIndex(signupYear, index + 2 + variantOffset, index + 5 + variantOffset)
+    const segment = segments[(index * 3 + variantOffset) % segments.length]
+    const lastActiveDate = dateFromIndex(index % 5 === 0 ? 2026 : 2025, index + 7 + variantOffset, index + 11 + variantOffset)
 
     return {
       customer_id: customerId,
@@ -99,14 +101,14 @@ const createCustomers = (): CustomerRow[] => {
       country,
       city,
       signup_date: signupDate,
-      acquisition_channel: channels[(index * 2) % channels.length],
+      acquisition_channel: channels[(index + variantOffset) % channels.length],
       segment,
       last_active_date: lastActiveDate,
     }
   })
 }
 
-const createProducts = (): ProductRow[] => {
+const createProducts = (variantOffset = 0): ProductRow[] => {
   const productNames = [
     'Aurora Backpack',
     'Beacon Bottle',
@@ -136,8 +138,8 @@ const createProducts = (): ProductRow[] => {
 
   return productNames.map((productName, index) => {
     const productId = index + 1
-    const categoryId = (index % 6) + 1
-    const price = 24 + (index % 5) * 18 + Math.floor(index / 5) * 11
+    const categoryId = ((index + variantOffset) % 6) + 1
+    const price = 24 + ((index + variantOffset) % 5) * 18 + Math.floor((index + variantOffset) / 5) * 11
     const cost = Number((price * 0.47).toFixed(2))
 
     return {
@@ -172,9 +174,10 @@ const campaigns = [
   [8, 'Lifecycle Email Boost', 'Email', '2025-10-01', '2025-12-01', 3400],
 ] as const
 
-const buildSeedSql = () => {
-  const customers = createCustomers()
-  const products = createProducts()
+const buildSeedSql = (variantSeed = 0) => {
+  const variantOffset = normalizeVariantSeed(variantSeed)
+  const customers = createCustomers(variantOffset)
+  const products = createProducts(variantOffset)
   const productMap = new Map(products.map((product) => [product.product_id, product]))
   const customerMap = new Map(customers.map((customer) => [customer.customer_id, customer]))
 
@@ -189,12 +192,12 @@ const buildSeedSql = () => {
   let eventId = 1
 
   for (let orderId = 1; orderId <= 180; orderId += 1) {
-    const customerId = ((orderId * 7) % 60) + 1
+    const customerId = (((orderId * 7) + variantOffset * 5) % 60) + 1
     const customer = customerMap.get(customerId)
-    const orderDate = dateFromIndex(orderId < 120 ? 2025 : 2026, orderId + 1, orderId + 3)
-    const campaignId = orderId % 5 === 0 ? null : ((orderId % campaigns.length) || campaigns.length)
-    const status = orderId % 11 === 0 ? 'cancelled' : orderId % 7 === 0 ? 'processing' : 'completed'
-    const deviceType = ['Desktop', 'Mobile', 'Tablet'][orderId % 3]
+    const orderDate = dateFromIndex(orderId < 120 ? 2025 : 2026, orderId + 1 + variantOffset, orderId + 3 + variantOffset)
+    const campaignId = (orderId + variantOffset) % 5 === 0 ? null : (((orderId + variantOffset) % campaigns.length) || campaigns.length)
+    const status = (orderId + variantOffset) % 11 === 0 ? 'cancelled' : (orderId + variantOffset) % 7 === 0 ? 'processing' : 'completed'
+    const deviceType = ['Desktop', 'Mobile', 'Tablet'][(orderId + variantOffset) % 3]
 
     orders.push([
       orderId,
@@ -206,14 +209,14 @@ const buildSeedSql = () => {
       deviceType,
     ])
 
-    const itemCount = (orderId % 3) + 1
+    const itemCount = ((orderId + variantOffset) % 3) + 1
     let orderTotal = 0
 
     for (let itemOffset = 0; itemOffset < itemCount; itemOffset += 1) {
-      const productId = ((orderId * 5 + itemOffset * 3) % products.length) + 1
+      const productId = ((orderId * 5 + itemOffset * 3 + variantOffset) % products.length) + 1
       const product = productMap.get(productId)
-      const quantity = ((orderId + itemOffset) % 4) + 1
-      const discountPct = [0, 0.05, 0.1, 0.15][(orderId + itemOffset) % 4]
+      const quantity = ((orderId + itemOffset + variantOffset) % 4) + 1
+      const discountPct = [0, 0.05, 0.1, 0.15][(orderId + itemOffset + variantOffset) % 4]
       const unitPrice = Number((product!.price * (1 + (itemOffset % 2) * 0.04)).toFixed(2))
 
       orderItems.push([orderItemId, orderId, productId, quantity, unitPrice, discountPct])
@@ -223,9 +226,9 @@ const buildSeedSql = () => {
     }
 
     const paymentStatus =
-      status === 'cancelled' ? 'refunded' : orderId % 9 === 0 ? 'failed' : 'paid'
-    const paymentMethod = ['Card', 'PayPal', 'Wallet'][orderId % 3]
-    const paymentDate = dateFromIndex(orderId < 120 ? 2025 : 2026, orderId + 1, orderId + 5)
+      status === 'cancelled' ? 'refunded' : (orderId + variantOffset) % 9 === 0 ? 'failed' : 'paid'
+    const paymentMethod = ['Card', 'PayPal', 'Wallet'][(orderId + variantOffset) % 3]
+    const paymentDate = dateFromIndex(orderId < 120 ? 2025 : 2026, orderId + 1 + variantOffset, orderId + 5 + variantOffset)
 
     payments.push([
       paymentId,
@@ -239,7 +242,7 @@ const buildSeedSql = () => {
 
     const baseSession = `sess-${pad(orderId)}`
     const eventSequence =
-      orderId % 6 === 0
+      (orderId + variantOffset) % 6 === 0
         ? ['page_view', 'view_product', 'add_to_cart']
         : ['page_view', 'view_product', 'add_to_cart', 'purchase_intent']
 
@@ -250,7 +253,7 @@ const buildSeedSql = () => {
         baseSession,
         `${orderDate} ${pad(9 + eventIndex)}:00:00`,
         eventName,
-        orderItems[(orderId - 1) * 2]?.[2] ?? (((orderId * 5) % products.length) + 1),
+        orderItems[(orderId - 1) * 2]?.[2] ?? ((((orderId * 5) + variantOffset) % products.length) + 1),
         campaignId,
         deviceType,
       ])
@@ -261,10 +264,10 @@ const buildSeedSql = () => {
   for (let productId = 1; productId <= products.length; productId += 1) {
     inventoryRows.push([
       productId,
-      16 + ((productId * 7) % 85),
-      20 + (productId % 5) * 5,
-      ['Sydney', 'Dallas', 'Berlin'][productId % 3],
-      dateFromIndex(2025, productId + 2, productId + 9),
+      16 + (((productId * 7) + variantOffset * 3) % 85),
+      20 + ((productId + variantOffset) % 5) * 5,
+      ['Sydney', 'Dallas', 'Berlin'][(productId + variantOffset) % 3],
+      dateFromIndex(2025, productId + 2 + variantOffset, productId + 9 + variantOffset),
     ])
   }
 
@@ -282,9 +285,9 @@ const buildSeedSql = () => {
               10 + eventIndex,
             )}:30:00`,
             eventName,
-            ((customerId + sessionOffset + eventIndex) % products.length) + 1,
-            sessionOffset % 3 === 0 ? null : ((customerId + sessionOffset) % campaigns.length) + 1,
-            ['Desktop', 'Mobile'][eventIndex % 2],
+            ((customerId + sessionOffset + eventIndex + variantOffset) % products.length) + 1,
+            sessionOffset % 3 === 0 ? null : (((customerId + sessionOffset + variantOffset) % campaigns.length) + 1),
+            ['Desktop', 'Mobile'][(eventIndex + variantOffset) % 2],
           ])
           eventId += 1
         },
@@ -292,7 +295,7 @@ const buildSeedSql = () => {
     }
 
     if (customer) {
-      customer.last_active_date = dateFromIndex(2025, customerId + 4, customerId + 12)
+      customer.last_active_date = dateFromIndex(2025, customerId + 4 + variantOffset, customerId + 12 + variantOffset)
     }
   }
 
@@ -502,24 +505,26 @@ const convertExecResult = (db: Database, sql: string): QueryResult => {
   }
 }
 
-export const runSql = async (sql: string): Promise<QueryResult> => {
+export const runSqlOnVariant = async (sql: string, variantSeed = 0): Promise<QueryResult> => {
   const SQL = await getSqlModule()
   const db = new SQL.Database()
 
   try {
-    db.exec(buildSeedSql())
+    db.exec(buildSeedSql(variantSeed))
     return convertExecResult(db, sql)
   } finally {
     db.close()
   }
 }
 
-export const getDatabaseSnapshot = async () => {
+export const runSql = async (sql: string): Promise<QueryResult> => runSqlOnVariant(sql, 0)
+
+export const getDatabaseSnapshot = async (variantSeed = 0) => {
   const SQL = await getSqlModule()
   const db = new SQL.Database()
 
   try {
-    db.exec(buildSeedSql())
+    db.exec(buildSeedSql(variantSeed))
     return {
       customers: convertExecResult(db, 'SELECT * FROM customers LIMIT 5;'),
       orders: convertExecResult(db, 'SELECT * FROM orders LIMIT 5;'),

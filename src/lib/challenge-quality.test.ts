@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { allChallenges, lessonsByTrack } from '../data/gameContent'
-import { runSql } from './database'
+import { runSql, runSqlOnVariant } from './database'
 import { compareResults } from './validation'
 
 const stripTrailingSemicolon = (sql: string) => sql.trim().replace(/;\s*$/, '')
+const challengeVariants = [0, 1] as const
 
 const makeDeliberatelyWrongQuery = (sql: string) => {
   const source = stripTrailingSemicolon(sql)
@@ -13,20 +14,23 @@ const makeDeliberatelyWrongQuery = (sql: string) => {
 }
 
 describe('challenge quality', () => {
-  it.each(allChallenges)('solution for %s runs and validates', async (challenge) => {
-    const result = await runSql(challenge.solutionSql)
+  it.each(allChallenges)('solution for %s runs and validates across variants', async (challenge) => {
+    for (const variantSeed of challengeVariants) {
+      const result = await runSqlOnVariant(challenge.solutionSql, variantSeed)
+      const expected = await runSqlOnVariant(challenge.solutionSql, variantSeed)
 
-    expect(result.columns).toEqual(challenge.expectedColumns)
-    expect(result.rows.length).toBeGreaterThan(0)
+      expect(result.columns).toEqual(challenge.expectedColumns)
+      expect(result.rows.length).toBeGreaterThan(0)
 
-    const feedback = compareResults(challenge, challenge.solutionSql, result, result)
-    expect(feedback.status).toBe('success')
+      const feedback = compareResults(challenge, challenge.solutionSql, result, expected)
+      expect(feedback.status).toBe('success')
+    }
   })
 
   it.each(allChallenges)('deliberately wrong query for %s fails', async (challenge) => {
     const wrongSql = makeDeliberatelyWrongQuery(challenge.solutionSql)
-    const wrongResult = await runSql(wrongSql)
-    const correctResult = await runSql(challenge.solutionSql)
+    const wrongResult = await runSqlOnVariant(wrongSql, 1)
+    const correctResult = await runSqlOnVariant(challenge.solutionSql, 1)
     const feedback = compareResults(challenge, wrongSql, wrongResult, correctResult)
 
     expect(feedback.status).toBe('error')
@@ -48,6 +52,20 @@ describe('challenge quality', () => {
     expect(correctResult.rows.length).toBeGreaterThan(0)
     expect(relaxedResult.rows).not.toEqual(correctResult.rows)
     expect(feedback.status).toBe('error')
+  })
+
+  it('deterministic dataset variants change at least one representative answer', async () => {
+    const challenge = allChallenges.find((item) => item.id === 'beginner-06')
+
+    expect(challenge).toBeTruthy()
+    if (!challenge) {
+      return
+    }
+
+    const baseResult = await runSqlOnVariant(challenge.solutionSql, 0)
+    const variantResult = await runSqlOnVariant(challenge.solutionSql, 1)
+
+    expect(baseResult.rows).not.toEqual(variantResult.rows)
   })
 
   it('price band lesson keeps its bucket boundaries meaningful', async () => {

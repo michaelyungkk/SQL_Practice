@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+﻿import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   Award,
@@ -911,6 +911,68 @@ const getAdaptiveCoachHint = (challenge: Challenge, attemptCount: number) => {
 const renderHintBody = (hint: string) =>
   hint.includes('\n') ? <pre>{renderSqlTokens(hint)}</pre> : <span>{renderTextWithInlineCode(hint)}</span>
 
+const formatSqlQuery = (sql: string) => {
+  const compact = sql.trim().replace(/;\s*$/, '').replace(/\s+/g, ' ')
+
+  if (!compact) {
+    return ''
+  }
+
+  const clauseBreaks = [
+    'SELECT',
+    'FROM',
+    'WHERE',
+    'GROUP BY',
+    'HAVING',
+    'ORDER BY',
+    'LIMIT',
+    'INNER JOIN',
+    'LEFT JOIN',
+    'RIGHT JOIN',
+    'FULL JOIN',
+    'JOIN',
+    'UNION ALL',
+    'UNION',
+    'INTERSECT',
+    'EXCEPT',
+    'WITH',
+  ]
+
+  let formatted = compact
+  clauseBreaks.forEach((clause) => {
+    const clausePattern = new RegExp(`\\s+(${clause.replaceAll(' ', '\\s+')})\\b`, 'gi')
+    formatted = formatted.replace(clausePattern, '\n$1')
+  })
+
+  formatted = formatted.replace(/\s*,\s*/g, ', ').replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+
+  return formatted
+    .split('\n')
+    .map((line, index) => {
+      const trimmed = line.trim()
+      if (!trimmed) {
+        return ''
+      }
+
+      if (index === 0 || /^SELECT\b/i.test(trimmed) || /^WITH\b/i.test(trimmed) || /^(UNION ALL|UNION|INTERSECT|EXCEPT)\b/i.test(trimmed)) {
+        return trimmed
+      }
+
+      if (/^(FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|JOIN|INNER JOIN|LEFT JOIN|RIGHT JOIN|FULL JOIN)\b/i.test(trimmed)) {
+        return trimmed
+      }
+
+      if (/^(AND|OR|WHEN|THEN|ELSE|END|ON)\b/i.test(trimmed)) {
+        return `  ${trimmed}`
+      }
+
+      return `  ${trimmed}`
+    })
+    .filter(Boolean)
+    .join('\n')
+    .concat(';')
+}
+
 const getEditorSeedSql = (challenge: Challenge, view: View) => {
   if (view === 'learn') {
     return getLearnModePatternSql(challenge)
@@ -1048,6 +1110,7 @@ const App = () => {
   const [queryExplanation, setQueryExplanation] = useState<string[] | null>(null)
   const [interviewAttemptSummary, setInterviewAttemptSummary] = useState<InterviewAttemptSummary | null>(null)
   const [interviewExpiredChallengeId, setInterviewExpiredChallengeId] = useState<string | null>(null)
+  const [editorScrollTop, setEditorScrollTop] = useState(0)
   const hasLoadedProgress = useRef(false)
   const draftStoreRef = useRef(progress.editorDrafts)
   const hintStoreRef = useRef(progress.hintSteps)
@@ -1249,6 +1312,7 @@ const App = () => {
     () => (currentChallenge ? progress.queryHistory[currentChallenge.id]?.length ?? 0 : 0),
     [currentChallenge, progress.queryHistory],
   )
+  const editorLineCount = useMemo(() => Math.max(1, editorSql.split('\n').length), [editorSql])
   const conceptMastery = useMemo(() => {
     const grouped = new Map<
       string,
@@ -1570,6 +1634,14 @@ const App = () => {
         [currentChallenge.id]: value,
       },
     }))
+  }
+
+  const handleFormatSql = () => {
+    handleEditorChange(formatSqlQuery(editorSql))
+  }
+
+  const handleEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
+    setEditorScrollTop(event.currentTarget.scrollTop)
   }
 
   const selectChallenge = (challenge: Challenge) => {
@@ -2408,8 +2480,12 @@ const App = () => {
                           onClick={() => handleEditorChange(getEditorSeedSql(currentChallenge, view))}
                         >
                           <RefreshCw size={16} />
-                            <span>Reset SQL</span>
-                          </button>
+                          <span>Reset SQL</span>
+                        </button>
+                        <button type="button" className="secondary-button" onClick={handleFormatSql}>
+                          <Sparkles size={16} />
+                          <span>Format SQL</span>
+                        </button>
                         <button type="button" className="primary-button" onClick={handleRun} disabled={isRunning || interviewIsExpired}>
                           <Play size={16} />
                           <span>{isRunning ? 'Running…' : interviewIsExpired ? 'Time Expired' : 'Run Query'}</span>
@@ -2425,13 +2501,24 @@ const App = () => {
                         Work from memory first. The timer is enforced, and the score reflects correctness, speed, and how many hints you needed.
                       </p>
                     ) : null}
-                    <textarea
-                      value={editorSql}
-                      onChange={(event) => handleEditorChange(event.target.value)}
-                      onKeyDown={handleEditorKeyDown}
-                      spellCheck={false}
-                      disabled={interviewIsExpired}
-                    />
+                    <div className="code-editor-shell">
+                      <div className="code-editor-gutter" aria-hidden="true">
+                        <div className="code-editor-gutter-scroll" style={{ transform: `translateY(-${editorScrollTop}px)` }}>
+                          {Array.from({ length: editorLineCount }, (_, index) => (
+                            <span key={index}>{index + 1}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea
+                        value={editorSql}
+                        onChange={(event) => handleEditorChange(event.target.value)}
+                        onKeyDown={handleEditorKeyDown}
+                        onScroll={handleEditorScroll}
+                        spellCheck={false}
+                        wrap="off"
+                        disabled={interviewIsExpired}
+                      />
+                    </div>
                   </div>
 
                   <div className="result-grid">

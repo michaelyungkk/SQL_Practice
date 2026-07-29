@@ -681,6 +681,43 @@ select {
   font: 0.96rem/1.55 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
 }
 
+.code-editor-shell {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: #f8fbff;
+}
+
+.code-editor-gutter {
+  width: 48px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  background: #eef4fb;
+  color: #64748b;
+  font: 0.96rem/1.55 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  padding: 16px 10px 16px 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.code-editor-gutter-scroll {
+  display: grid;
+}
+
+.code-editor-gutter-scroll span {
+  min-height: 1.55em;
+}
+
+.code-editor-shell textarea {
+  flex: 1;
+  min-height: 280px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  resize: vertical;
+}
+
 .editor-panel textarea:disabled {
   background: #eef2f7;
   color: #64748b;
